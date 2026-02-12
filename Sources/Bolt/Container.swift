@@ -114,9 +114,9 @@ public final class Container: Resolver, @unchecked Sendable {
         registration: Registration,
         context: ResolutionContext
     ) -> T {
-        let resolved = self.resolveWithCycleTracking(key: key, context: context) {
-            registration.factory.factory(context, nil)
-        }
+        self.pushResolutionKeyOrFail(key: key, context: context)
+        defer { context.stack.removeLast() }
+        let resolved = registration.factory.factory(context, nil)
         return Self.castOrFail(resolved, expected: type, key: key)
     }
 
@@ -127,9 +127,9 @@ public final class Container: Resolver, @unchecked Sendable {
         params: Any,
         context: ResolutionContext
     ) -> T {
-        let resolved = self.resolveWithCycleTracking(key: key, context: context) {
-            registration.factory.factory(context, params)
-        }
+        self.pushResolutionKeyOrFail(key: key, context: context)
+        defer { context.stack.removeLast() }
+        let resolved = registration.factory.factory(context, params)
         return Self.castOrFail(resolved, expected: type, key: key)
     }
 
@@ -144,30 +144,26 @@ public final class Container: Resolver, @unchecked Sendable {
             return Self.castOrFail(cached, expected: type, key: key)
         }
 
-        let resolved = self.resolveWithCycleTracking(key: key, context: context) {
+        self.pushResolutionKeyOrFail(key: key, context: context)
+        defer { context.stack.removeLast() }
+        let resolved =
             singletonStore.getOrCreateValue(for: key) {
                 registration.factory.factory(context, nil)
             }
-        }
         return Self.castOrFail(resolved, expected: type, key: key)
     }
 
-    private func resolveWithCycleTracking<T>(
+    @inline(__always)
+    private func pushResolutionKeyOrFail(
         key: Key,
-        context: ResolutionContext,
-        _ body: () -> T
-    ) -> T {
+        context: ResolutionContext
+    ) {
         if context.stack.contains(key) {
             let cycle = context.stack + [key]
             fatalError(Self.circularDependencyMessage(for: cycle))
         }
 
         context.stack.append(key)
-        defer {
-            _ = context.stack.popLast()
-        }
-
-        return body()
     }
 
     func collectedValidationErrors() -> [ValidationError] {
@@ -267,6 +263,7 @@ public final class Container: Resolver, @unchecked Sendable {
         )
     }
 
+    @inline(__always)
     private static func castOrFail<T>(_ value: Any, expected: T.Type, key: Key) -> T {
         guard let typed = value as? T else {
             fatalError(typeMismatchMessage(for: key, expected: expected, actual: Swift.type(of: value)))

@@ -156,6 +156,12 @@ public final class Container: Resolver, @unchecked Sendable {
         self.lock.withLock { self.validationErrors }
     }
 
+    func recordValidationError(_ error: ValidationError) {
+        self.lock.withLock {
+            self.validationErrors.append(error)
+        }
+    }
+
     func effectiveRegistrationsForValidation() -> [Key: Registration] {
         self.lock.withLock {
             var merged = self.baseRegistrations

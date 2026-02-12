@@ -109,6 +109,7 @@ public final class Container: Resolver {
 ```swift
 open class DependencyModule {
     public init() {}
+    open var dependentModules: [DependencyModule] { get }
     open func defineDependencies(into container: Container)
 }
 ```

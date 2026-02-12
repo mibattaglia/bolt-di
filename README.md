@@ -5,7 +5,7 @@ Bolt is a fast, lightweight Swift dependency injection framework with:
 - Result-builder registration DSL
 - Factory and singleton scopes
 - Task-local container scoping (`withContainer`) and lexical overrides (`withOverrides`)
-- Validator tooling for duplicate, missing, type-mismatch, and circular graph errors
+- Validator tooling for duplicate/type-mismatch checks and module dependency cycle checks
 
 ## Installation
 
@@ -61,6 +61,7 @@ let service: UserService = Bolt.inject()
 
 - Resolve dependencies at composition boundaries (app setup, feature assembly, coordinator entry points).
 - Prefer passing resolved dependencies into child types via initializers rather than resolving deep in leaf objects.
+- Use `DependencyModule.dependentModules` to declare transitive module requirements instead of manually duplicating setup lists.
 - Use `withOverrides` for lexical test/customization scopes only.
 - Keep runtime lookup ergonomic by relying on inferred `resolver.get()` where context provides type information.
 
@@ -106,22 +107,6 @@ validator.validate { error in
   print(error.message)
 }
 ```
-
-### Dependency edges for missing/cycle checks
-
-`BoltValidator` detects missing registrations and cycles using explicit `edges` input:
-
-```swift
-let validator = BoltValidator(
-  modules: [FeatureModule()],
-  edges: [
-    DependencyEdge(from: Key(ServiceA.self), to: Key(ServiceB.self)),
-    DependencyEdge(from: Key(ServiceB.self), to: Key(ServiceA.self)),
-  ]
-)
-```
-
-Without edges, validator still reports duplicate and type-mismatch issues.
 
 ## References and Inspiration
 

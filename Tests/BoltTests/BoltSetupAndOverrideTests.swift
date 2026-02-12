@@ -19,6 +19,10 @@ private final class OrderedModuleA: DependencyModule {
 }
 
 private final class OrderedModuleB: DependencyModule {
+    override var dependentModules: [DependencyModule] {
+        [OrderedModuleA()]
+    }
+
     override func defineDependencies(into container: Container) {
         container.register {
             Factory(OrderedValue.self) { resolver in
@@ -31,7 +35,7 @@ private final class OrderedModuleB: DependencyModule {
 @Suite("Bolt Setup And Overrides")
 struct BoltSetupAndOverridesSuite {
     @Test func setupAppliesModulesInOrderForDependentResolution() {
-        Bolt.setup(modules: [OrderedModuleA(), OrderedModuleB()])
+        Bolt.setup(modules: [OrderedModuleB()])
 
         let value: OrderedValue = Bolt.inject()
         #expect(value.value == "A")

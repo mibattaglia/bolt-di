@@ -10,7 +10,16 @@ public enum Bolt {
 
     public static func setup(modules: [DependencyModule]) {
         let container = Container()
-        for module in modules {
+        let orderedModules: [DependencyModule]
+        do {
+            orderedModules = try DependencyModule.orderedModules(from: modules)
+        } catch ModuleGraphError.cycle(let path) {
+            fatalError("Bolt: Circular module dependency detected: \(path.joined(separator: " -> ")).")
+        } catch {
+            fatalError("Bolt: Failed to resolve module dependencies.")
+        }
+
+        for module in orderedModules {
             module.defineDependencies(into: container)
         }
         sharedLock.withLock {

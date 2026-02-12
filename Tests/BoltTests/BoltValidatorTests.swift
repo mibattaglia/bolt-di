@@ -18,32 +18,15 @@ private final class ValidatorDuplicateModuleB: DependencyModule {
     }
 }
 
-private final class MissingDependencyMarker {}
-
-private final class ValidatorMissingDependencyModule: DependencyModule {
-    override func defineDependencies(into container: Container) {
-        container.register {
-            Factory(Int.self) { _ in
-                1
-            }
-        }
+private final class ModuleCycleRoot: DependencyModule {
+    override var dependentModules: [DependencyModule] {
+        [ModuleCycleLeaf()]
     }
 }
 
-private final class CycleA {}
-private final class CycleB {}
-
-private final class ValidatorCircularDependencyModule: DependencyModule {
-    override func defineDependencies(into container: Container) {
-        container.register {
-            Factory(CycleA.self) { _ in
-                CycleA()
-            }
-
-            Factory(CycleB.self) { _ in
-                CycleB()
-            }
-        }
+private final class ModuleCycleLeaf: DependencyModule {
+    override var dependentModules: [DependencyModule] {
+        [ModuleCycleRoot()]
     }
 }
 
@@ -105,35 +88,8 @@ struct BoltValidatorSuite {
         #expect(errors.isEmpty)
     }
 
-    @Test func detectsMissingRegistrationsFromValidatorEdges() {
-        let validator = BoltValidator(
-            modules: [ValidatorMissingDependencyModule()],
-            edges: [
-                DependencyEdge(
-                    from: Key(Int.self),
-                    to: Key(MissingDependencyMarker.self)
-                )
-            ]
-        )
-
-        var errors: [ValidationError] = []
-        validator.validate { error in
-            errors.append(error)
-        }
-
-        #expect(errors.count == 1)
-        #expect(errors.first?.kind == .missingRegistration)
-        #expect(errors.first?.dependency?.typeName == String(reflecting: MissingDependencyMarker.self))
-    }
-
-    @Test func detectsCircularDependenciesFromValidatorEdges() {
-        let validator = BoltValidator(
-            modules: [ValidatorCircularDependencyModule()],
-            edges: [
-                DependencyEdge(from: Key(CycleA.self), to: Key(CycleB.self)),
-                DependencyEdge(from: Key(CycleB.self), to: Key(CycleA.self)),
-            ]
-        )
+    @Test func detectsCircularModuleDependencies() {
+        let validator = BoltValidator(modules: [ModuleCycleRoot()])
 
         var errors: [ValidationError] = []
         validator.validate { error in
@@ -142,7 +98,7 @@ struct BoltValidatorSuite {
 
         #expect(errors.count == 1)
         #expect(errors.first?.kind == .circularDependency)
-        #expect(errors.first?.message.contains("CycleA") == true)
-        #expect(errors.first?.message.contains("CycleB") == true)
+        #expect(errors.first?.message.contains("ModuleCycleRoot") == true)
+        #expect(errors.first?.message.contains("ModuleCycleLeaf") == true)
     }
 }

@@ -1,15 +1,5 @@
 import Foundation
 
-public struct DependencyEdge: Hashable, Sendable {
-    public let from: Key
-    public let to: Key
-
-    public init(from: Key, to: Key) {
-        self.from = from
-        self.to = to
-    }
-}
-
 public struct ValidationError: Error, Sendable {
     public struct DependencyDescriptor: Hashable, Sendable {
         public let typeName: String
@@ -41,20 +31,36 @@ public struct ValidationError: Error, Sendable {
 
 public struct BoltValidator {
     private let container: Container
-    private let edges: [DependencyEdge]
 
-    public init(container: Container, edges: [DependencyEdge] = []) {
+    public init(container: Container) {
         self.container = container
-        self.edges = edges
     }
 
-    public init(modules: [DependencyModule], edges: [DependencyEdge] = []) {
+    public init(modules: [DependencyModule]) {
         let container = Container(registrationBehavior: .collecting)
-        for module in modules {
-            module.defineDependencies(into: container)
+        do {
+            let orderedModules = try DependencyModule.orderedModules(from: modules)
+            for module in orderedModules {
+                module.defineDependencies(into: container)
+            }
+        } catch ModuleGraphError.cycle(let path) {
+            container.recordValidationError(
+                ValidationError(
+                    kind: .circularDependency,
+                    dependency: nil,
+                    message: "Bolt: Circular module dependency detected: \(path.joined(separator: " -> "))."
+                )
+            )
+        } catch {
+            container.recordValidationError(
+                ValidationError(
+                    kind: .circularDependency,
+                    dependency: nil,
+                    message: "Bolt: Failed to resolve module dependency graph."
+                )
+            )
         }
         self.container = container
-        self.edges = edges
     }
 
     public func validate(_ onError: (ValidationError) -> Void) {
@@ -68,14 +74,6 @@ public struct BoltValidator {
             if let error = self.typeMismatchError(for: registration) {
                 onError(error)
             }
-        }
-
-        for error in self.missingRegistrationErrors(registrations: registrations) {
-            onError(error)
-        }
-
-        for error in self.circularDependencyErrors(registrations: registrations) {
-            onError(error)
         }
     }
 
@@ -96,80 +94,4 @@ public struct BoltValidator {
         )
     }
 
-    private func missingRegistrationErrors(registrations: [Key: Registration]) -> [ValidationError] {
-        var missingKeys = Set<Key>()
-        for edge in self.edges where registrations[edge.to] == nil {
-            missingKeys.insert(edge.to)
-        }
-
-        return missingKeys.map { key in
-            let descriptor = ValidationError.DependencyDescriptor(typeName: key.typeName, name: key.name)
-            return ValidationError(
-                kind: .missingRegistration,
-                dependency: descriptor,
-                message:
-                    "Bolt: Missing registration for \(key.typeName) (name: \(key.name.map { "\"\($0)\"" } ?? "nil"))."
-            )
-        }
-    }
-
-    private func circularDependencyErrors(registrations: [Key: Registration]) -> [ValidationError] {
-        enum VisitState {
-            case visiting
-            case visited
-        }
-
-        let availableKeys = Set(registrations.keys)
-        let filteredEdges = self.edges.filter {
-            availableKeys.contains($0.from) && availableKeys.contains($0.to)
-        }
-        let graph = Dictionary(grouping: filteredEdges, by: \.from)
-
-        var visitStates: [Key: VisitState] = [:]
-        var recursionStack: [Key] = []
-        var cycleMessages = Set<String>()
-        var errors: [ValidationError] = []
-
-        func dfs(_ key: Key) {
-            visitStates[key] = .visiting
-            recursionStack.append(key)
-
-            let dependencies = graph[key]?.map(\.to) ?? []
-            for dependency in dependencies {
-                if visitStates[dependency] == .visiting {
-                    if let index = recursionStack.lastIndex(of: dependency) {
-                        let cycle = Array(recursionStack[index...]) + [dependency]
-                        let cyclePath = cycle.map {
-                            "\($0.typeName) (name: \($0.name.map { "\"\($0)\"" } ?? "nil"))"
-                        }.joined(separator: " -> ")
-                        let message = "Bolt: Circular dependency detected: \(cyclePath)."
-                        if cycleMessages.insert(message).inserted {
-                            let descriptor = ValidationError.DependencyDescriptor(
-                                typeName: dependency.typeName,
-                                name: dependency.name
-                            )
-                            errors.append(
-                                ValidationError(
-                                    kind: .circularDependency,
-                                    dependency: descriptor,
-                                    message: message
-                                )
-                            )
-                        }
-                    }
-                } else if visitStates[dependency] == nil {
-                    dfs(dependency)
-                }
-            }
-
-            _ = recursionStack.popLast()
-            visitStates[key] = .visited
-        }
-
-        for key in graph.keys where visitStates[key] == nil {
-            dfs(key)
-        }
-
-        return errors
-    }
 }

@@ -11,15 +11,24 @@ public final class Container: Resolver, @unchecked Sendable {
     private var baseRegistrations: [Key: Registration] = [:]
     private var baseSingletons: [Key: Any] = [:]
     private var overrideLayers: [OverrideLayer] = []
+    private let registrationBehavior: RegistrationBehavior
+    private var validationErrors: [ValidationError] = []
 
-    public init() {}
+    public init() {
+        self.registrationBehavior = .strict
+    }
+
+    init(registrationBehavior: RegistrationBehavior) {
+        self.registrationBehavior = registrationBehavior
+    }
 
     public func register(@DependencyBuilder _ registrations: () -> [Registration]) {
         let values = registrations()
         self.lock.withLock {
             for registration in values {
                 if self.baseRegistrations[registration.key] != nil {
-                    fatalError(Self.duplicateRegistrationMessage(for: registration.key))
+                    self.handleDuplicateRegistration(for: registration.key)
+                    continue
                 }
                 self.baseRegistrations[registration.key] = registration
             }
@@ -114,6 +123,22 @@ public final class Container: Resolver, @unchecked Sendable {
         return Self.castOrFail(finalValue, expected: type, key: key)
     }
 
+    func collectedValidationErrors() -> [ValidationError] {
+        self.lock.withLock { self.validationErrors }
+    }
+
+    func effectiveRegistrationsForValidation() -> [Key: Registration] {
+        self.lock.withLock {
+            var merged = self.baseRegistrations
+            for layer in self.overrideLayers {
+                for (key, registration) in layer.registrations {
+                    merged[key] = registration
+                }
+            }
+            return merged
+        }
+    }
+
     static func withCurrent<R>(_ container: Container, _ body: () throws -> R) rethrows -> R {
         try Self.$taskLocalCurrent.withValue(container) {
             try body()
@@ -136,7 +161,8 @@ public final class Container: Resolver, @unchecked Sendable {
             var byKey: [Key: Registration] = [:]
             for registration in registrations {
                 if byKey[registration.key] != nil {
-                    fatalError(Self.duplicateRegistrationMessage(for: registration.key))
+                    self.handleDuplicateRegistration(for: registration.key)
+                    continue
                 }
                 byKey[registration.key] = registration
             }
@@ -233,6 +259,22 @@ public final class Container: Resolver, @unchecked Sendable {
         guard let name else { return "nil" }
         return "\"\(name)\""
     }
+
+    private func handleDuplicateRegistration(for key: Key) {
+        switch self.registrationBehavior {
+        case .strict:
+            fatalError(Self.duplicateRegistrationMessage(for: key))
+        case .collecting:
+            let descriptor = ValidationError.DependencyDescriptor(typeName: key.typeName, name: key.name)
+            self.validationErrors.append(
+                ValidationError(
+                    kind: .duplicateRegistration,
+                    dependency: descriptor,
+                    message: Self.duplicateRegistrationMessage(for: key)
+                )
+            )
+        }
+    }
 }
 
 private struct OverrideLayer {
@@ -250,6 +292,11 @@ private struct RegistrationLookup {
 private enum RegistrationOwner {
     case base
     case overrideLayer(id: UUID)
+}
+
+enum RegistrationBehavior {
+    case strict
+    case collecting
 }
 
 private final class ResolutionContext: Resolver {

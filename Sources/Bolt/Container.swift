@@ -2,36 +2,54 @@ import Foundation
 
 public final class Container: Resolver, @unchecked Sendable {
     @TaskLocal nonisolated(unsafe) static var taskLocalCurrent: Container?
-    @TaskLocal nonisolated(unsafe) private static var taskLocalOverrideLayer: OverrideLayer?
 
     public static var current: Container {
         Self.taskLocalCurrent ?? Bolt.shared
     }
 
     private let lock = NSLock()
-    private var baseRegistrations: [Key: Registration] = [:]
-    private var baseSingletonStore = SingletonStore()
+    private var mutableRegistrations: [Key: Registration] = [:]
+    nonisolated(unsafe) private var registrationSnapshot = RegistrationSnapshot(entries: [:])
+
     private let registrationBehavior: RegistrationBehavior
     private var validationErrors: [ValidationError] = []
+    private let parent: Container?
 
     public init() {
+        self.parent = nil
         self.registrationBehavior = .strict
     }
 
     init(registrationBehavior: RegistrationBehavior) {
+        self.parent = nil
         self.registrationBehavior = registrationBehavior
+    }
+
+    private init(
+        parent: Container,
+        registrationBehavior: RegistrationBehavior,
+        registrations: [Key: Registration]
+    ) {
+        self.parent = parent
+        self.registrationBehavior = registrationBehavior
+        self.mutableRegistrations = registrations
+        self.registrationSnapshot = RegistrationSnapshot(entries: registrations)
     }
 
     public func register(@DependencyBuilder _ registrations: () -> [Registration]) {
         let values = registrations()
         self.lock.withLock {
+            var updated = self.mutableRegistrations
             for registration in values {
-                if self.baseRegistrations[registration.key] != nil {
+                if updated[registration.key] != nil {
                     self.handleDuplicateRegistration(for: registration.key)
                     continue
                 }
-                self.baseRegistrations[registration.key] = registration
+                updated[registration.key] = registration
             }
+
+            self.mutableRegistrations = updated
+            self.registrationSnapshot = RegistrationSnapshot(entries: updated)
         }
     }
 
@@ -46,24 +64,23 @@ public final class Container: Resolver, @unchecked Sendable {
     }
 
     public func resetScopes() {
-        self.baseSingletonStore.removeAll()
+        for registration in self.registrationSnapshot.entries.values {
+            registration.singletonCell?.clear()
+        }
     }
 
     public func resetAll() {
         self.lock.withLock {
-            self.baseRegistrations.removeAll()
+            self.mutableRegistrations.removeAll()
+            self.registrationSnapshot = RegistrationSnapshot(entries: [:])
         }
-        self.baseSingletonStore.removeAll()
     }
 
     fileprivate func resolve<T>(
         _ type: T.Type, named: String?, params: Any?, context: ResolutionContext
-    )
-        -> T
-    {
+    ) -> T {
         let key = Key(type, name: named)
-        let registrationLookup = self.lookupRegistration(for: key)
-        guard let registration = registrationLookup.registration else {
+        guard let registration = self.lookupRegistration(for: key) else {
             fatalError(Self.missingRegistrationMessage(for: key))
         }
 
@@ -102,7 +119,6 @@ public final class Container: Resolver, @unchecked Sendable {
                 type,
                 key: key,
                 registration: registration,
-                singletonStore: registrationLookup.singletonStore ?? self.baseSingletonStore,
                 context: context
             )
         }
@@ -116,7 +132,7 @@ public final class Container: Resolver, @unchecked Sendable {
     ) -> T {
         self.pushResolutionKeyOrFail(key: key, context: context)
         defer { context.stack.removeLast() }
-        let resolved = registration.factory.factory(context, nil)
+        let resolved = registration.factory.call(context, nil)
         return Self.castOrFail(resolved, expected: type, key: key)
     }
 
@@ -129,7 +145,7 @@ public final class Container: Resolver, @unchecked Sendable {
     ) -> T {
         self.pushResolutionKeyOrFail(key: key, context: context)
         defer { context.stack.removeLast() }
-        let resolved = registration.factory.factory(context, params)
+        let resolved = registration.factory.call(context, params)
         return Self.castOrFail(resolved, expected: type, key: key)
     }
 
@@ -137,19 +153,22 @@ public final class Container: Resolver, @unchecked Sendable {
         _ type: T.Type,
         key: Key,
         registration: Registration,
-        singletonStore: SingletonStore,
         context: ResolutionContext
     ) -> T {
-        if let cached = singletonStore.cachedValue(for: key) {
+        guard let singletonCell = registration.singletonCell else {
+            fatalError("Bolt: Internal error: singleton registration missing cache cell for \(Self.dependencyDescription(key)).")
+        }
+
+        if let cached = singletonCell.cachedValue {
             return Self.castOrFail(cached, expected: type, key: key)
         }
 
         self.pushResolutionKeyOrFail(key: key, context: context)
         defer { context.stack.removeLast() }
-        let resolved =
-            singletonStore.getOrCreateValue(for: key) {
-                registration.factory.factory(context, nil)
-            }
+
+        let resolved = singletonCell.getOrCreate {
+            registration.factory.call(context, nil)
+        }
         return Self.castOrFail(resolved, expected: type, key: key)
     }
 
@@ -177,13 +196,21 @@ public final class Container: Resolver, @unchecked Sendable {
     }
 
     func effectiveRegistrationsForValidation() -> [Key: Registration] {
-        var registrations = self.lock.withLock { self.baseRegistrations }
-        let layers = Self.taskLocalOverrideLayer?.layersRootToLeaf() ?? []
-        for layer in layers {
-            for (key, registration) in layer.entries {
+        var registrations: [Key: Registration] = [:]
+        var chain: [Container] = []
+        var current: Container? = self
+
+        while let container = current {
+            chain.append(container)
+            current = container.parent
+        }
+
+        for container in chain.reversed() {
+            for (key, registration) in container.registrationSnapshot.entries {
                 registrations[key] = registration
             }
         }
+
         return registrations
     }
 
@@ -203,8 +230,12 @@ public final class Container: Resolver, @unchecked Sendable {
         @DependencyBuilder _ overrides: () -> [Registration], _ body: () throws -> R
     ) rethrows -> R {
         let entries = self.buildOverrideEntries(from: overrides())
-        let layer = OverrideLayer(parent: Self.taskLocalOverrideLayer, entries: entries)
-        return try Self.$taskLocalOverrideLayer.withValue(layer) {
+        let scoped = Container(
+            parent: self,
+            registrationBehavior: self.registrationBehavior,
+            registrations: entries
+        )
+        return try Self.withCurrent(scoped) {
             try body()
         }
     }
@@ -213,8 +244,12 @@ public final class Container: Resolver, @unchecked Sendable {
         @DependencyBuilder _ overrides: () -> [Registration], _ body: () async throws -> R
     ) async rethrows -> R {
         let entries = self.buildOverrideEntries(from: overrides())
-        let layer = OverrideLayer(parent: Self.taskLocalOverrideLayer, entries: entries)
-        return try await Self.$taskLocalOverrideLayer.withValue(layer) {
+        let scoped = Container(
+            parent: self,
+            registrationBehavior: self.registrationBehavior,
+            registrations: entries
+        )
+        return try await Self.withCurrent(scoped) {
             try await body()
         }
     }
@@ -222,6 +257,7 @@ public final class Container: Resolver, @unchecked Sendable {
     private func buildOverrideEntries(from overrides: [Registration]) -> [Key: Registration] {
         var entries: [Key: Registration] = [:]
         var overrideKeys = Set<Key>()
+
         for registration in overrides {
             if overrideKeys.contains(registration.key) {
                 switch self.registrationBehavior {
@@ -244,23 +280,19 @@ public final class Container: Resolver, @unchecked Sendable {
                 }
                 continue
             }
+
             overrideKeys.insert(registration.key)
             entries[registration.key] = registration
         }
+
         return entries
     }
 
-    private func lookupRegistration(for key: Key) -> RegistrationLookup {
-        if let overrideLookup = Self.taskLocalOverrideLayer?.lookup(key) {
-            return RegistrationLookup(
-                registration: overrideLookup.registration,
-                singletonStore: overrideLookup.layer.singletonStore
-            )
+    private func lookupRegistration(for key: Key) -> Registration? {
+        if let registration = self.registrationSnapshot.entries[key] {
+            return registration
         }
-        return RegistrationLookup(
-            registration: self.lock.withLock { self.baseRegistrations[key] },
-            singletonStore: nil
-        )
+        return self.parent?.lookupRegistration(for: key)
     }
 
     @inline(__always)
@@ -324,14 +356,17 @@ public final class Container: Resolver, @unchecked Sendable {
     }
 }
 
-private struct RegistrationLookup {
-    let registration: Registration?
-    let singletonStore: SingletonStore?
-}
-
 enum RegistrationBehavior {
     case strict
     case collecting
+}
+
+private final class RegistrationSnapshot: @unchecked Sendable {
+    let entries: [Key: Registration]
+
+    init(entries: [Key: Registration]) {
+        self.entries = entries
+    }
 }
 
 private final class ResolutionContext: Resolver {
@@ -348,115 +383,5 @@ private final class ResolutionContext: Resolver {
 
     func get<T, P>(_ type: T.Type, named: String?, params: P) -> T {
         self.container.resolve(type, named: named, params: params, context: self)
-    }
-}
-
-extension NSLock {
-    fileprivate func withLock<R>(_ body: () -> R) -> R {
-        self.lock()
-        defer { self.unlock() }
-        return body()
-    }
-}
-
-private final class SingletonStore: @unchecked Sendable {
-    private let lock = NSLock()
-    private var cells: [Key: SingletonCell]
-
-    init(seed: [Key: Any] = [:]) {
-        self.cells = seed.mapValues { SingletonCell(cached: $0) }
-    }
-
-    func getOrCreateValue(for key: Key, _ build: () -> Any) -> Any {
-        let cell = self.lock.withLock {
-            if let existing = self.cells[key] {
-                return existing
-            }
-            let newCell = SingletonCell()
-            self.cells[key] = newCell
-            return newCell
-        }
-        return cell.getOrCreate(build)
-    }
-
-    func cachedValue(for key: Key) -> Any? {
-        let cell = self.lock.withLock { self.cells[key] }
-        return cell?.cachedValue
-    }
-
-    func removeAll() {
-        self.lock.withLock {
-            self.cells.removeAll()
-        }
-    }
-
-    func snapshotValues() -> [Key: Any] {
-        let snapshot = self.lock.withLock { self.cells }
-        var values: [Key: Any] = [:]
-        values.reserveCapacity(snapshot.count)
-        for (key, cell) in snapshot {
-            if let value = cell.cachedValue {
-                values[key] = value
-            }
-        }
-        return values
-    }
-}
-
-private final class OverrideLayer: @unchecked Sendable {
-    let parent: OverrideLayer?
-    let entries: [Key: Registration]
-    let singletonStore = SingletonStore()
-
-    init(parent: OverrideLayer?, entries: [Key: Registration]) {
-        self.parent = parent
-        self.entries = entries
-    }
-
-    func lookup(_ key: Key) -> (registration: Registration, layer: OverrideLayer)? {
-        if let registration = self.entries[key] {
-            return (registration, self)
-        }
-        return self.parent?.lookup(key)
-    }
-
-    func layersRootToLeaf() -> [OverrideLayer] {
-        var layers: [OverrideLayer] = []
-        var current: OverrideLayer? = self
-        while let layer = current {
-            layers.append(layer)
-            current = layer.parent
-        }
-        return layers.reversed()
-    }
-}
-
-private final class SingletonCell: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: Any?
-
-    init(cached: Any? = nil) {
-        self.value = cached
-    }
-
-    var cachedValue: Any? {
-        self.value
-    }
-
-    func getOrCreate(_ build: () -> Any) -> Any {
-        if let value = self.value {
-            return value
-        }
-
-        self.lock.lock()
-        defer { self.lock.unlock() }
-
-        if let value = self.value {
-            return value
-        }
-
-        let created = build()
-        self.value = created
-        return created
     }
 }

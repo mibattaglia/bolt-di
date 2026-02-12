@@ -168,6 +168,11 @@ BoltValidator.validate(module: NetworkModule()) { error in
 }
 ```
 
+## Benchmark Tiers
+
+- Tier A (`tier_a_*`): head-to-head comparable benchmarks against WhoopDI, Factory, and swift-dependencies.
+- Tier B (`tier_b_*`): Bolt stress/feature-depth benchmarks.
+
 ## References and Inspiration
 
 - [WhoopDI](https://github.com/WhoopInc/WhoopDI)

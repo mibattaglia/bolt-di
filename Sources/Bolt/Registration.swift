@@ -2,16 +2,20 @@ import Foundation
 
 public struct Registration {
     public let key: Key
-    public let scope: Scope
     let shape: RegistrationShape
-
     let factory: ErasedFactory
+    let singletonCell: SingletonCell?
 
     init(key: Key, scope: Scope, factory: ErasedFactory) {
         self.key = key
-        self.scope = scope
         self.shape = RegistrationShape(scope: scope, hasParameters: factory.parameterType != nil)
         self.factory = factory
+        switch scope {
+        case .factory:
+            self.singletonCell = nil
+        case .singleton:
+            self.singletonCell = SingletonCell()
+        }
     }
 }
 
@@ -35,7 +39,7 @@ enum RegistrationShape {
 struct ErasedFactory {
     let outputType: Any.Type
     let parameterType: Any.Type?
-    let factory: (Resolver, Any?) -> Any
+    let call: (Resolver, Any?) -> Any
 }
 
 public struct Factory<T> {
@@ -60,7 +64,7 @@ public struct Factory<T> {
             factory: ErasedFactory(
                 outputType: T.self,
                 parameterType: nil,
-                factory: { resolver, _ in self.factory(resolver) }
+                call: { resolver, _ in self.factory(resolver) }
             )
         )
     }
@@ -88,7 +92,7 @@ public struct Singleton<T> {
             factory: ErasedFactory(
                 outputType: T.self,
                 parameterType: nil,
-                factory: { resolver, _ in self.factory(resolver) }
+                call: { resolver, _ in self.factory(resolver) }
             )
         )
     }
@@ -116,7 +120,7 @@ public struct FactoryWithParams<P, T> {
             factory: ErasedFactory(
                 outputType: T.self,
                 parameterType: P.self,
-                factory: { resolver, params in
+                call: { resolver, params in
                     guard let typedParams = params as? P else {
                         fatalError(
                             "Bolt: Parameter type mismatch for \(String(reflecting: self.type)). Expected \(String(reflecting: P.self))."
@@ -126,5 +130,37 @@ public struct FactoryWithParams<P, T> {
                 }
             )
         )
+    }
+}
+
+final class SingletonCell: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Any?
+
+    var cachedValue: Any? {
+        self.value
+    }
+
+    func getOrCreate(_ build: () -> Any) -> Any {
+        if let value = self.value {
+            return value
+        }
+
+        self.lock.lock()
+        defer { self.lock.unlock() }
+
+        if let value = self.value {
+            return value
+        }
+
+        let created = build()
+        self.value = created
+        return created
+    }
+
+    func clear() {
+        self.lock.withLock {
+            self.value = nil
+        }
     }
 }

@@ -18,49 +18,47 @@ swift run -c release BoltBenchmarks --filter singleton
 ```
 
 ## Current benchmark set
-- Bolt:
-  - `bolt_factory_resolve_leaf`
-  - `bolt_factory_resolve_root`
-  - `bolt_factory_resolve_with_params`
-  - `bolt_singleton_cold_resolve`
-  - `bolt_singleton_warm_resolve`
-  - `bolt_with_overrides_scope_entry_depth_1`
-  - `bolt_with_overrides_scope_entry_depth_3`
-  - `bolt_with_overrides_scope_entry_depth_10`
-  - `bolt_with_overrides_resolve_depth_1`
-  - `bolt_with_overrides_resolve_depth_3`
-  - `bolt_with_overrides_resolve_depth_10`
-  - `bolt_with_overrides_scope_entry_contention`
-- WhoopDI:
-  - `whoopdi_factory_resolve_leaf`
-  - `whoopdi_factory_resolve_root`
-  - `whoopdi_singleton_warm_resolve`
-  - `whoopdi_local_inject_scope`
-- Factory:
-  - `factory_factory_resolve_leaf`
-  - `factory_factory_resolve_root`
-  - `factory_singleton_warm_resolve`
-  - `factory_override_scope`
-- swift-dependencies:
-  - `dependencies_factory_resolve_leaf`
-  - `dependencies_factory_resolve_root`
-  - `dependencies_singleton_warm_resolve`
-  - `dependencies_override_scope`
+- Tier A (head-to-head, comparable):
+  - `tier_a_bolt_factory_resolve_leaf`
+  - `tier_a_bolt_factory_resolve_root`
+  - `tier_a_bolt_singleton_warm_resolve`
+  - `tier_a_bolt_with_overrides_scope_entry_depth_1`
+  - `tier_a_bolt_with_overrides_resolve_depth_1`
+  - `tier_a_whoopdi_factory_resolve_leaf`
+  - `tier_a_whoopdi_factory_resolve_root`
+  - `tier_a_whoopdi_singleton_warm_resolve`
+  - `tier_a_whoopdi_local_inject_scope`
+  - `tier_a_factory_factory_resolve_leaf`
+  - `tier_a_factory_factory_resolve_root`
+  - `tier_a_factory_singleton_warm_resolve`
+  - `tier_a_factory_override_scope`
+  - `tier_a_dependencies_factory_resolve_leaf`
+  - `tier_a_dependencies_factory_resolve_root`
+  - `tier_a_dependencies_singleton_warm_resolve`
+  - `tier_a_dependencies_override_scope`
+- Tier B (Bolt stress):
+  - `tier_b_bolt_factory_resolve_with_params`
+  - `tier_b_bolt_singleton_cold_resolve`
+  - `tier_b_bolt_with_overrides_scope_entry_depth_3`
+  - `tier_b_bolt_with_overrides_scope_entry_depth_10`
+  - `tier_b_bolt_with_overrides_resolve_depth_3`
+  - `tier_b_bolt_with_overrides_resolve_depth_10`
+  - `tier_b_bolt_with_overrides_scope_entry_contention`
 
 ## Baseline capture (Phase 1)
 Run the JSON command at least 5 times on the same machine/session class, and compare medians for:
-- `bolt_factory_resolve_leaf`
-- `bolt_factory_resolve_root`
-- `bolt_factory_resolve_with_params`
-- `bolt_singleton_warm_resolve`
-- `bolt_singleton_cold_resolve`
-- `bolt_with_overrides_scope_entry_depth_1`
-- `bolt_with_overrides_scope_entry_depth_3`
-- `bolt_with_overrides_scope_entry_depth_10`
-- `bolt_with_overrides_resolve_depth_1`
-- `bolt_with_overrides_resolve_depth_3`
-- `bolt_with_overrides_resolve_depth_10`
-- `bolt_with_overrides_scope_entry_contention`
+- `tier_a_bolt_factory_resolve_leaf`
+- `tier_a_bolt_factory_resolve_root`
+- `tier_b_bolt_factory_resolve_with_params`
+- `tier_a_bolt_singleton_warm_resolve`
+- `tier_b_bolt_singleton_cold_resolve`
+- `tier_a_bolt_with_overrides_scope_entry_depth_1`
+- `tier_b_bolt_with_overrides_scope_entry_depth_3`
+- `tier_b_bolt_with_overrides_scope_entry_depth_10`
+- `tier_a_bolt_with_overrides_resolve_depth_1`
+- `tier_b_bolt_with_overrides_resolve_depth_3`
+- `tier_b_bolt_with_overrides_resolve_depth_10`
+- `tier_b_bolt_with_overrides_scope_entry_contention`
 
 ## Override benchmark interpretation (Phase 3)
 - `scope_entry_*`: measures lexical override push/pop overhead without dependency resolution.

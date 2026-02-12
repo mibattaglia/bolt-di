@@ -70,53 +70,53 @@ func registerBoltBenchmarks() {
     let boltFactoryWithParamsContainer = makeFactoryWithParamsContainer()
     let boltSingletonContainer = makeSingletonContainer()
 
-    benchmark("bolt_factory_resolve_leaf") {
+    benchmark("tier_a_bolt_factory_resolve_leaf") {
         _ = boltFactoryContainer.get(BoltLeaf.self)
     }
 
-    benchmark("bolt_factory_resolve_root") {
+    benchmark("tier_a_bolt_factory_resolve_root") {
         _ = boltFactoryContainer.get(BoltRoot.self)
     }
 
-    benchmark("bolt_factory_resolve_with_params") {
+    benchmark("tier_b_bolt_factory_resolve_with_params") {
         _ = boltFactoryWithParamsContainer.get(Int.self, params: 41)
     }
 
-    benchmark("bolt_singleton_warm_resolve") {
+    benchmark("tier_a_bolt_singleton_warm_resolve") {
         _ = boltSingletonContainer.get(BoltLeaf.self)
         _ = boltSingletonContainer.get(BoltLeaf.self)
     }
 
-    benchmark("bolt_singleton_cold_resolve") {
+    benchmark("tier_b_bolt_singleton_cold_resolve") {
         boltSingletonContainer.resetScopes()
         _ = boltSingletonContainer.get(BoltLeaf.self)
     }
 
-    benchmark("bolt_with_overrides_scope_entry_depth_1") {
+    benchmark("tier_a_bolt_with_overrides_scope_entry_depth_1") {
         runNestedOverrides(depth: 1, resolve: false, container: boltFactoryContainer)
     }
 
-    benchmark("bolt_with_overrides_scope_entry_depth_3") {
+    benchmark("tier_b_bolt_with_overrides_scope_entry_depth_3") {
         runNestedOverrides(depth: 3, resolve: false, container: boltFactoryContainer)
     }
 
-    benchmark("bolt_with_overrides_scope_entry_depth_10") {
+    benchmark("tier_b_bolt_with_overrides_scope_entry_depth_10") {
         runNestedOverrides(depth: 10, resolve: false, container: boltFactoryContainer)
     }
 
-    benchmark("bolt_with_overrides_resolve_depth_1") {
+    benchmark("tier_a_bolt_with_overrides_resolve_depth_1") {
         runNestedOverrides(depth: 1, resolve: true, container: boltFactoryContainer)
     }
 
-    benchmark("bolt_with_overrides_resolve_depth_3") {
+    benchmark("tier_b_bolt_with_overrides_resolve_depth_3") {
         runNestedOverrides(depth: 3, resolve: true, container: boltFactoryContainer)
     }
 
-    benchmark("bolt_with_overrides_resolve_depth_10") {
+    benchmark("tier_b_bolt_with_overrides_resolve_depth_10") {
         runNestedOverrides(depth: 10, resolve: true, container: boltFactoryContainer)
     }
 
-    benchmark("bolt_with_overrides_scope_entry_contention") {
+    benchmark("tier_b_bolt_with_overrides_scope_entry_contention") {
         let group = DispatchGroup()
         let queue = DispatchQueue(label: "bolt.overrides.contention", attributes: .concurrent)
 

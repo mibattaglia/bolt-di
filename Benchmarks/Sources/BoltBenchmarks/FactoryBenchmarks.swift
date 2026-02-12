@@ -40,20 +40,20 @@ func registerFactoryBenchmarks() {
     factoryContainer.benchFactoryRoot.register { FactoryRoot(mid: factoryContainer.benchFactoryMid()) }
     factoryContainer.benchSingletonLeaf.register { FactoryLeaf() }
 
-    benchmark("factory_factory_resolve_leaf") {
+    benchmark("tier_a_factory_factory_resolve_leaf") {
         _ = factoryContainer.benchFactoryLeaf()
     }
 
-    benchmark("factory_factory_resolve_root") {
+    benchmark("tier_a_factory_factory_resolve_root") {
         _ = factoryContainer.benchFactoryRoot()
     }
 
-    benchmark("factory_singleton_warm_resolve") {
+    benchmark("tier_a_factory_singleton_warm_resolve") {
         _ = factoryContainer.benchSingletonLeaf()
         _ = factoryContainer.benchSingletonLeaf()
     }
 
-    benchmark("factory_override_scope") {
+    benchmark("tier_a_factory_override_scope") {
         factoryContainer.manager.push()
         defer { factoryContainer.manager.pop() }
         factoryContainer.benchFactoryLeaf.register { FactoryLeaf() }

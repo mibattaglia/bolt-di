@@ -23,20 +23,20 @@ private final class WhoopBenchmarkModule: DependencyModule {
 func registerWhoopDIBenchmarks() {
     WhoopDI.setup(modules: [WhoopBenchmarkModule()])
 
-    benchmark("whoopdi_factory_resolve_leaf") {
+    benchmark("tier_a_whoopdi_factory_resolve_leaf") {
         let _: WhoopLeaf = WhoopDI.inject("leaf_factory")
     }
 
-    benchmark("whoopdi_factory_resolve_root") {
+    benchmark("tier_a_whoopdi_factory_resolve_root") {
         let _: WhoopRoot = WhoopDI.inject("root_factory")
     }
 
-    benchmark("whoopdi_singleton_warm_resolve") {
+    benchmark("tier_a_whoopdi_singleton_warm_resolve") {
         let _: WhoopLeaf = WhoopDI.inject("leaf_singleton")
         let _: WhoopLeaf = WhoopDI.inject("leaf_singleton")
     }
 
-    benchmark("whoopdi_local_inject_scope") {
+    benchmark("tier_a_whoopdi_local_inject_scope") {
         let _: WhoopRoot = WhoopDI.inject("root_factory") { module in
             module.factory(name: "leaf_factory") { WhoopLeaf() }
         }

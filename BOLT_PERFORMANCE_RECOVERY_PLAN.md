@@ -1,7 +1,7 @@
 # Bolt Performance Recovery Plan (v0.2 - Reference Port)
 
 Date: 2026-02-12  
-Status: Active  
+Status: Active (P1-P3 completed on 2026-02-12)  
 Owner: Bolt maintainers
 
 ## Goal
@@ -175,6 +175,7 @@ Acceptance checks:
 ## Execution Plan (Win-or-Revert)
 
 ### Phase P1: Key + Snapshot Lookup Port
+- Status: Completed (2026-02-12)
 - Port Factory-style key normalization for internal lookup.
 - Port lock-free read snapshot publication model for registrations.
 - Gate:
@@ -182,6 +183,7 @@ Acceptance checks:
   - If not, revert P1 entirely.
 
 ### Phase P2: Override Scope Port
+- Status: Completed (2026-02-12)
 - Replace current layered override lookup with child/snapshot scoped container model.
 - Keep task-local lexical visibility and deterministic precedence.
 - Gate:
@@ -189,6 +191,7 @@ Acceptance checks:
   - If not, revert P2 entirely.
 
 ### Phase P3: Singleton Entry Port
+- Status: Completed (2026-02-12)
 - Move singleton cells to effective registration entries.
 - Use direct DCL per entry (WhoopDI-style).
 - Gate:
@@ -197,6 +200,7 @@ Acceptance checks:
   - If not, revert P3 entirely.
 
 ### Phase P4: Cycle Tracking Optimization
+- Status: Attempted on 2026-02-12, reverted (Tier A regression)
 - Introduce constant-time membership bookkeeping in resolution context.
 - Preserve full cycle diagnostics.
 - Gate:
@@ -204,6 +208,7 @@ Acceptance checks:
   - If regressions occur without compensating gains, revert P4.
 
 ### Phase P5: Typed Fast Path Port
+- Status: Attempted on 2026-02-12, reverted (Tier A regression)
 - Introduce typed resolve entries for dominant no-params factory/singleton shapes.
 - Keep erased fallback only for uncommon/parameterized paths.
 - Gate:
@@ -211,6 +216,7 @@ Acceptance checks:
   - If not, revert P5.
 
 ### Phase P6: Final Benchmark/Reporting Cleanup
+- Status: Completed (2026-02-12)
 - Finalize tiered benchmark naming/documentation.
 - Publish before/after medians and percent gaps to each reference.
 

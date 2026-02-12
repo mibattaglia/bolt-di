@@ -62,20 +62,20 @@ private struct DependenciesResolver {
 func registerDependenciesBenchmarks() {
     let resolver = DependenciesResolver()
 
-    benchmark("dependencies_factory_resolve_leaf") {
+    benchmark("tier_a_dependencies_factory_resolve_leaf") {
         _ = resolver.makeLeaf()
     }
 
-    benchmark("dependencies_factory_resolve_root") {
+    benchmark("tier_a_dependencies_factory_resolve_root") {
         _ = resolver.makeRoot()
     }
 
-    benchmark("dependencies_singleton_warm_resolve") {
+    benchmark("tier_a_dependencies_singleton_warm_resolve") {
         _ = resolver.singletonLeaf
         _ = resolver.singletonLeaf
     }
 
-    benchmark("dependencies_override_scope") {
+    benchmark("tier_a_dependencies_override_scope") {
         withDependencies {
             $0.dependenciesLeafFactory = { DependenciesLeaf() }
         } operation: {

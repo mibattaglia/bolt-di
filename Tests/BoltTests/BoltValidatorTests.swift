@@ -65,7 +65,7 @@ struct BoltValidatorSuite {
                 factory: ErasedFactory(
                     outputType: Int.self,
                     parameterType: nil,
-                    factory: { _, _ in 42 }
+                    call: { _, _ in 42 }
                 )
             )
         }

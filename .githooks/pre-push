@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Pre-push hook to auto-format Swift files with swift-format
+
+echo "Running swift-format..."
+
+# Run swift-format on Sources and Tests directories
+swift-format format --in-place --recursive Sources Tests 2>/dev/null
+
+# Check if any files were modified
+if [ -n "$(git status --porcelain Sources Tests 2>/dev/null)" ]; then
+    echo "⚠️  swift-format modified files. Adding changes to a new commit..."
+    git add Sources Tests
+    git commit -m "style: auto-format with swift-format"
+    echo "✅ Formatting changes committed."
+fi
+
+echo "✅ swift-format complete."
+exit 0

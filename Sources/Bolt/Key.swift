@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Key: Hashable {
+public struct Key: Hashable, Sendable {
     public let typeID: ObjectIdentifier
     public let typeName: String
     public let name: String?

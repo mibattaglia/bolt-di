@@ -23,10 +23,7 @@ private final class MissingDependencyMarker {}
 private final class ValidatorMissingDependencyModule: DependencyModule {
     override func defineDependencies(into container: Container) {
         container.register {
-            Factory(
-                Int.self,
-                dependencies: [Key(MissingDependencyMarker.self)]
-            ) { _ in
+            Factory(Int.self) { _ in
                 1
             }
         }
@@ -39,17 +36,11 @@ private final class CycleB {}
 private final class ValidatorCircularDependencyModule: DependencyModule {
     override func defineDependencies(into container: Container) {
         container.register {
-            Factory(
-                CycleA.self,
-                dependencies: [Key(CycleB.self)]
-            ) { _ in
+            Factory(CycleA.self) { _ in
                 CycleA()
             }
 
-            Factory(
-                CycleB.self,
-                dependencies: [Key(CycleA.self)]
-            ) { _ in
+            Factory(CycleB.self) { _ in
                 CycleB()
             }
         }
@@ -79,7 +70,6 @@ struct BoltValidatorSuite {
             Registration(
                 key: Key(String.self),
                 scope: .factory,
-                dependencies: [],
                 factory: ErasedFactory(
                     outputType: Int.self,
                     parameterType: nil,
@@ -115,8 +105,16 @@ struct BoltValidatorSuite {
         #expect(errors.isEmpty)
     }
 
-    @Test func detectsMissingRegistrationsFromDependencyMetadata() {
-        let validator = BoltValidator(modules: [ValidatorMissingDependencyModule()])
+    @Test func detectsMissingRegistrationsFromValidatorEdges() {
+        let validator = BoltValidator(
+            modules: [ValidatorMissingDependencyModule()],
+            edges: [
+                DependencyEdge(
+                    from: Key(Int.self),
+                    to: Key(MissingDependencyMarker.self)
+                )
+            ]
+        )
 
         var errors: [ValidationError] = []
         validator.validate { error in
@@ -128,8 +126,14 @@ struct BoltValidatorSuite {
         #expect(errors.first?.dependency?.typeName == String(reflecting: MissingDependencyMarker.self))
     }
 
-    @Test func detectsCircularDependenciesFromDependencyMetadata() {
-        let validator = BoltValidator(modules: [ValidatorCircularDependencyModule()])
+    @Test func detectsCircularDependenciesFromValidatorEdges() {
+        let validator = BoltValidator(
+            modules: [ValidatorCircularDependencyModule()],
+            edges: [
+                DependencyEdge(from: Key(CycleA.self), to: Key(CycleB.self)),
+                DependencyEdge(from: Key(CycleB.self), to: Key(CycleA.self)),
+            ]
+        )
 
         var errors: [ValidationError] = []
         validator.validate { error in

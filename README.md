@@ -36,15 +36,6 @@ let package = Package(
 pod 'Bolt'
 ```
 
-## Examples
-
-Real-code examples are available in:
-- `Examples/BasicCompositionExample.swift`
-- `Examples/ScopedOverrideExample.swift`
-- `Examples/ValidationExample.swift`
-
-These files are documentation/examples only and are not included in SPM or CocoaPods distribution.
-
 ## Runtime Usage
 
 ```swift
@@ -71,7 +62,6 @@ let service: UserService = Bolt.inject()
 - Resolve dependencies at composition boundaries (app setup, feature assembly, coordinator entry points).
 - Prefer passing resolved dependencies into child types via initializers rather than resolving deep in leaf objects.
 - Use `withOverrides` for lexical test/customization scopes only.
-- Add explicit `dependencies: [Key(...)]` metadata for registrations where you want validator missing/cycle checks.
 - Keep runtime lookup ergonomic by relying on inferred `resolver.get()` where context provides type information.
 
 ### Named and parameterized registrations
@@ -117,18 +107,21 @@ validator.validate { error in
 }
 ```
 
-### Dependency metadata for missing/cycle checks
+### Dependency edges for missing/cycle checks
 
-`BoltValidator` detects missing registrations and cycles using explicit registration metadata:
+`BoltValidator` detects missing registrations and cycles using explicit `edges` input:
 
 ```swift
-container.register {
-  Factory(ServiceA.self, dependencies: [Key(ServiceB.self)]) { _ in ServiceA() }
-  Factory(ServiceB.self, dependencies: [Key(ServiceA.self)]) { _ in ServiceB() }
-}
+let validator = BoltValidator(
+  modules: [FeatureModule()],
+  edges: [
+    DependencyEdge(from: Key(ServiceA.self), to: Key(ServiceB.self)),
+    DependencyEdge(from: Key(ServiceB.self), to: Key(ServiceA.self)),
+  ]
+)
 ```
 
-Without metadata, validator still reports duplicate and type-mismatch issues.
+Without edges, validator still reports duplicate and type-mismatch issues.
 
 ## References and Inspiration
 

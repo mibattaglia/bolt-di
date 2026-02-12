@@ -1,5 +1,15 @@
 import Foundation
 
+public struct DependencyEdge: Hashable, Sendable {
+    public let from: Key
+    public let to: Key
+
+    public init(from: Key, to: Key) {
+        self.from = from
+        self.to = to
+    }
+}
+
 public struct ValidationError: Error, Sendable {
     public struct DependencyDescriptor: Hashable, Sendable {
         public let typeName: String
@@ -31,17 +41,20 @@ public struct ValidationError: Error, Sendable {
 
 public struct BoltValidator {
     private let container: Container
+    private let edges: [DependencyEdge]
 
-    public init(container: Container) {
+    public init(container: Container, edges: [DependencyEdge] = []) {
         self.container = container
+        self.edges = edges
     }
 
-    public init(modules: [DependencyModule]) {
+    public init(modules: [DependencyModule], edges: [DependencyEdge] = []) {
         let container = Container(registrationBehavior: .collecting)
         for module in modules {
             module.defineDependencies(into: container)
         }
         self.container = container
+        self.edges = edges
     }
 
     public func validate(_ onError: (ValidationError) -> Void) {
@@ -85,10 +98,8 @@ public struct BoltValidator {
 
     private func missingRegistrationErrors(registrations: [Key: Registration]) -> [ValidationError] {
         var missingKeys = Set<Key>()
-        for registration in registrations.values {
-            for dependency in registration.dependencies where registrations[dependency] == nil {
-                missingKeys.insert(dependency)
-            }
+        for edge in self.edges where registrations[edge.to] == nil {
+            missingKeys.insert(edge.to)
         }
 
         return missingKeys.map { key in
@@ -108,6 +119,12 @@ public struct BoltValidator {
             case visited
         }
 
+        let availableKeys = Set(registrations.keys)
+        let filteredEdges = self.edges.filter {
+            availableKeys.contains($0.from) && availableKeys.contains($0.to)
+        }
+        let graph = Dictionary(grouping: filteredEdges, by: \.from)
+
         var visitStates: [Key: VisitState] = [:]
         var recursionStack: [Key] = []
         var cycleMessages = Set<String>()
@@ -117,8 +134,8 @@ public struct BoltValidator {
             visitStates[key] = .visiting
             recursionStack.append(key)
 
-            let dependencies = registrations[key]?.dependencies ?? []
-            for dependency in dependencies where registrations[dependency] != nil {
+            let dependencies = graph[key]?.map(\.to) ?? []
+            for dependency in dependencies {
                 if visitStates[dependency] == .visiting {
                     if let index = recursionStack.lastIndex(of: dependency) {
                         let cycle = Array(recursionStack[index...]) + [dependency]
@@ -149,7 +166,7 @@ public struct BoltValidator {
             visitStates[key] = .visited
         }
 
-        for key in registrations.keys where visitStates[key] == nil {
+        for key in graph.keys where visitStates[key] == nil {
             dfs(key)
         }
 

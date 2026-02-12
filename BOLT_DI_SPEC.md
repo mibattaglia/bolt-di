@@ -6,7 +6,7 @@ Date: 2026-02-11
 - [x] Phase 1: Package bootstrap (SPM + CocoaPods skeleton)
 - [x] Phase 2: Core model and registration DSL surface
 - [x] Phase 3: Container engine (strict mode)
-- [ ] Phase 4: Override and task-local scoping
+- [x] Phase 4: Override and task-local scoping
 - [ ] Phase 5: Bolt facade and property wrappers
 - [ ] Phase 6: Validation subsystem
 - [ ] Phase 7: Full test suite and packaging finish

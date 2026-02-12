@@ -1,9 +1,16 @@
 import Foundation
 
-public final class Container: Resolver {
+public final class Container: Resolver, @unchecked Sendable {
+    @TaskLocal nonisolated(unsafe) static var taskLocalCurrent: Container?
+
+    public static var current: Container {
+        Self.taskLocalCurrent ?? Bolt.shared
+    }
+
     private let lock = NSLock()
     private var baseRegistrations: [Key: Registration] = [:]
     private var baseSingletons: [Key: Any] = [:]
+    private var overrideLayers: [OverrideLayer] = []
 
     public init() {}
 
@@ -32,6 +39,9 @@ public final class Container: Resolver {
     public func resetScopes() {
         self.lock.withLock {
             self.baseSingletons.removeAll()
+            for index in self.overrideLayers.indices {
+                self.overrideLayers[index].singletons.removeAll()
+            }
         }
     }
 
@@ -39,6 +49,7 @@ public final class Container: Resolver {
         self.lock.withLock {
             self.baseRegistrations.removeAll()
             self.baseSingletons.removeAll()
+            self.overrideLayers.removeAll()
         }
     }
 
@@ -48,15 +59,16 @@ public final class Container: Resolver {
         -> T
     {
         let key = Key(type, name: named)
-        let registration = self.lock.withLock {
-            self.baseRegistrations[key]
+        let lookup = self.lock.withLock {
+            self.lookupRegistration(for: key)
         }
-        guard let registration else {
+        guard let lookup else {
             fatalError(Self.missingRegistrationMessage(for: key))
         }
+        let registration = lookup.registration
 
         if registration.scope == .singleton,
-            let cached = self.lock.withLock({ self.baseSingletons[key] })
+            let cached = lookup.cachedSingleton
         {
             return Self.castOrFail(cached, expected: type, key: key)
         }
@@ -92,13 +104,91 @@ public final class Container: Resolver {
         }
 
         let finalValue: Any = self.lock.withLock {
-            if let cached = self.baseSingletons[key] {
+            if let cached = self.readSingleton(for: key, owner: lookup.owner) {
                 return cached
             }
-            self.baseSingletons[key] = resolved
+
+            self.writeSingleton(resolved, for: key, owner: lookup.owner)
             return resolved
         }
         return Self.castOrFail(finalValue, expected: type, key: key)
+    }
+
+    static func withCurrent<R>(_ container: Container, _ body: () throws -> R) rethrows -> R {
+        try Self.$taskLocalCurrent.withValue(container) {
+            try body()
+        }
+    }
+
+    func withOverrideLayer<R>(
+        @DependencyBuilder _ overrides: () -> [Registration], _ body: () throws -> R
+    ) rethrows -> R {
+        let layerID = self.pushOverrideLayer(overrides())
+        defer {
+            self.popOverrideLayer(id: layerID)
+        }
+        return try body()
+    }
+
+    private func pushOverrideLayer(_ registrations: [Registration]) -> UUID {
+        let layerID = UUID()
+        self.lock.withLock {
+            var byKey: [Key: Registration] = [:]
+            for registration in registrations {
+                if byKey[registration.key] != nil {
+                    fatalError(Self.duplicateRegistrationMessage(for: registration.key))
+                }
+                byKey[registration.key] = registration
+            }
+            self.overrideLayers.append(OverrideLayer(id: layerID, registrations: byKey, singletons: [:]))
+        }
+        return layerID
+    }
+
+    private func popOverrideLayer(id: UUID) {
+        self.lock.withLock {
+            guard let index = self.overrideLayers.lastIndex(where: { $0.id == id }) else { return }
+            self.overrideLayers.remove(at: index)
+        }
+    }
+
+    private func lookupRegistration(for key: Key) -> RegistrationLookup? {
+        for index in self.overrideLayers.indices.reversed() {
+            guard let registration = self.overrideLayers[index].registrations[key] else { continue }
+            let cached = self.overrideLayers[index].singletons[key]
+            return RegistrationLookup(
+                registration: registration,
+                owner: .overrideLayer(id: self.overrideLayers[index].id),
+                cachedSingleton: cached
+            )
+        }
+
+        guard let registration = self.baseRegistrations[key] else { return nil }
+        return RegistrationLookup(
+            registration: registration,
+            owner: .base,
+            cachedSingleton: self.baseSingletons[key]
+        )
+    }
+
+    private func readSingleton(for key: Key, owner: RegistrationOwner) -> Any? {
+        switch owner {
+        case .base:
+            return self.baseSingletons[key]
+        case .overrideLayer(let id):
+            guard let index = self.overrideLayers.lastIndex(where: { $0.id == id }) else { return nil }
+            return self.overrideLayers[index].singletons[key]
+        }
+    }
+
+    private func writeSingleton(_ value: Any, for key: Key, owner: RegistrationOwner) {
+        switch owner {
+        case .base:
+            self.baseSingletons[key] = value
+        case .overrideLayer(let id):
+            guard let index = self.overrideLayers.lastIndex(where: { $0.id == id }) else { return }
+            self.overrideLayers[index].singletons[key] = value
+        }
     }
 
     private static func castOrFail<T>(_ value: Any, expected: T.Type, key: Key) -> T {
@@ -143,6 +233,23 @@ public final class Container: Resolver {
         guard let name else { return "nil" }
         return "\"\(name)\""
     }
+}
+
+private struct OverrideLayer {
+    let id: UUID
+    let registrations: [Key: Registration]
+    var singletons: [Key: Any]
+}
+
+private struct RegistrationLookup {
+    let registration: Registration
+    let owner: RegistrationOwner
+    let cachedSingleton: Any?
+}
+
+private enum RegistrationOwner {
+    case base
+    case overrideLayer(id: UUID)
 }
 
 private final class ResolutionContext: Resolver {

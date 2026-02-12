@@ -1,0 +1,100 @@
+{
+  "benchmarks": [
+    {
+      "name": "bolt_factory_resolve_leaf",
+      "time": 542.0,
+      "std": 19.164679626025276,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "bolt_factory_resolve_root",
+      "time": 1667.0,
+      "std": 17.659142312693163,
+      "iterations": 807071.0
+    },
+    {
+      "name": "bolt_singleton_warm_resolve",
+      "time": 1042.0,
+      "std": 19.859238193053848,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "bolt_with_overrides_scope",
+      "time": 2833.0,
+      "std": 12.998094318268413,
+      "iterations": 490530.0
+    },
+    {
+      "name": "whoopdi_factory_resolve_leaf",
+      "time": 208.0,
+      "std": 37.365029351290865,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "whoopdi_factory_resolve_root",
+      "time": 667.0,
+      "std": 22.570908733644856,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "whoopdi_singleton_warm_resolve",
+      "time": 333.0,
+      "std": 84.99650084382715,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "whoopdi_local_inject_scope",
+      "time": 833.0,
+      "std": 21.456295984704052,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "factory_factory_resolve_leaf",
+      "time": 209.0,
+      "std": 28.130558071255958,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "factory_factory_resolve_root",
+      "time": 667.0,
+      "std": 29.203917164247184,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "factory_singleton_warm_resolve",
+      "time": 1042.0,
+      "std": 14.396291459504429,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "factory_override_scope",
+      "time": 1708.0,
+      "std": 31.769454923971296,
+      "iterations": 853362.0
+    },
+    {
+      "name": "dependencies_factory_resolve_leaf",
+      "time": 417.0,
+      "std": 34.6565472750756,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "dependencies_factory_resolve_root",
+      "time": 1458.0,
+      "std": 22.97360826999684,
+      "iterations": 960743.0
+    },
+    {
+      "name": "dependencies_singleton_warm_resolve",
+      "time": 833.0,
+      "std": 21.806897014267317,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "dependencies_override_scope",
+      "time": 1542.0,
+      "std": 17.759939298286287,
+      "iterations": 914440.0
+    }
+  ]
+}

@@ -135,45 +135,76 @@ Low. One resolver flow with conditional fast path.
 Warm singleton lookups still pay locking/state costs.
 
 #### Change
-Adopt the WhoopDI-style singleton pattern (simple double-checked locking):
+Adopt a WhoopDI-like singleton pattern (simple double-checked locking at the registration/cell level):
 - first check cached value without locking
 - if empty, lock and check again
 - initialize once and store
 - return cached value for warm path
 
+The implementation goal is to mimic WhoopDI semantics as closely as possible while fitting Bolt's container model.
+
 Code-level expectations:
+- use per-registration (or per-key cell) state instead of one global singleton lock
 - avoid allocating per-read helper objects
 - keep initialization logic simple and explicit
 - validate contention behavior with dedicated concurrent singleton tests
-- treat existing wait/retry singleton state-machine flow as deprecated for this phase
+- replace the existing wait/retry singleton state-machine flow in this phase
+- do not hold a global dictionary lock while executing user factory code
 
-Example singleton store sketch:
+WhoopDI-style shape (conceptual):
 ```swift
-final class SingletonStore {
+final class SingletonCell {
   private let lock = NSLock()
-  private var values: [ServiceKey: Any] = [:]
+  private var value: Any?
 
-  func getOrCreate(_ registration: Registration, container: Container) -> Any {
-    if let cached = values[registration.key] {
-      return cached
-    }
+  func getOrCreate(_ build: () -> Any) -> Any {
+    if let value { return value }
 
     lock.lock()
     defer { lock.unlock() }
 
-    if let cached = values[registration.key] {
-      return cached
-    }
-
-    let created = registration.makeFactoryWithoutParameters(container)
-    values[registration.key] = created
+    if let value { return value }
+    let created = build()
+    value = created
     return created
   }
 }
 ```
 
+Bolt adaptation constraints:
+- If singleton cells are looked up via a dictionary, all dictionary access must remain synchronized.
+- Prefer stable singleton cell ownership so warm path avoids repeated map churn.
+- Keep exactly-once initialization behavior under contention.
+- Preserve current crash-on-failure behavior and cycle diagnostics.
+
+Container-level sketch with synchronized cell map:
+```swift
+final class SingletonStore {
+  private let mapLock = NSLock()
+  private var cells: [ServiceKey: SingletonCell] = [:]
+
+  func cell(for key: ServiceKey) -> SingletonCell {
+    mapLock.lock()
+    defer { mapLock.unlock() }
+    if let existing = cells[key] {
+      return existing
+    }
+    let newCell = SingletonCell()
+    cells[key] = newCell
+    return newCell
+  }
+}
+
+func resolveSingleton(_ registration: Registration, key: ServiceKey, container: Container) -> Any {
+  let cell = singletonStore.cell(for: key)
+  return cell.getOrCreate {
+    registration.makeFactoryWithoutParameters(container)
+  }
+}
+```
+
 #### Complexity budget
-Low/medium. No exotic lock-free architecture in this phase.
+Low/medium. No exotic lock-free architecture in this phase; prefer WhoopDI-like per-singleton locking.
 
 ### C) Lighter Override Scope Entry
 #### Why
@@ -185,13 +216,36 @@ Reduce per-scope setup overhead:
 - keep lexical/task-local semantics exactly the same
 - keep override precedence deterministic
 
-Implementation may use a simple overlay reference stack, but avoid a deep re-architecture.
+Semantic anchor:
+- Override semantics must remain aligned with swift-dependencies style lexical/task-local scoping.
+- Performance changes are internal-only and must not change visible override behavior.
+
+Implementation should move from derived-container snapshots to task-local override context layering.
 
 Code-level expectations:
+- replace `makeDerivedContainer` merge/copy flow with task-local override context push/pop
 - represent overrides as layered maps (base + scope overlays) instead of eager merged copies
-- resolve lookups by checking top-most overlay first, then falling through
+- resolve lookups by checking top-most overlay first, then falling through to base registrations
 - keep task-local push/pop O(1) in scope entry/exit
 - guard against deep-scope lookup regressions by measuring nested override depth and using a hybrid strategy when needed
+- keep duplicate-key handling within one override block deterministic and consistent with current strict/collecting behavior
+
+Concrete code change direction:
+- `Container.withScopedOverrides`:
+  - stop constructing a derived container per call
+  - construct one override layer/context for entries
+  - install it with task-local `withValue` for the lexical body
+- `Container.resolve`:
+  - read current task-local override context once
+  - lookup registration in override context first, then base map
+  - avoid repeated task-local/map probes in the same resolve call
+- singleton behavior under overrides:
+  - if key is overridden in active scope, singleton ownership is scope-local
+  - if key is not overridden, singleton ownership remains base
+  - popping scope removes scope-local singleton cache only
+- validation behavior:
+  - either provide merged effective view for validator on demand, or explicitly validate base and override scopes separately
+  - whichever path is chosen must be deterministic and documented
 
 Tradeoff to evaluate explicitly:
 - Entry-time merge/snapshot (Factory/swift-dependencies style) can make per-resolve lookup cheap but can cost more at scope entry.
@@ -279,12 +333,21 @@ Low.
 - Implement profile-driven fast-path dispatch in resolver.
 - Verify no behavior regressions.
 
-### Phase 2: Singleton + Override Improvements
-- Optimize singleton warm path.
-- Reduce override scope setup overhead.
-- Add/extend concurrency and scoping tests.
+### Phase 2: Singleton Improvements
+- Optimize singleton warm path using WhoopDI-like per-singleton DCL.
+- Add/extend singleton contention tests and singleton correctness tests.
+- Verify benchmark deltas for singleton warm/cold paths before override work.
 
-### Phase 3: Tightening + Re-evaluate
+### Phase 3: Override Improvements
+- Reduce override scope setup overhead.
+- Add/extend override scoping tests.
+- Verify benchmark deltas for scope entry and scope resolve.
+- Complete container override refactor:
+  - remove derived-container override path
+  - adopt task-local override context path
+  - preserve public API and lexical/task-local semantics
+
+### Phase 4: Tightening + Re-evaluate
 - Apply low-risk hot-path hygiene improvements.
 - Re-run full benchmark suite and compare deltas.
 - Decide if further complexity is justified.
@@ -312,6 +375,12 @@ Reject changes that:
 - weaken correctness guarantees,
 - introduce hard-to-debug concurrency behavior.
 
+Override-specific acceptance checks:
+- nested override precedence remains top-most-wins and deterministic
+- overridden singleton instances do not leak after scope exit
+- base singleton instances are reused for non-overridden keys
+- parallel tasks with independent override scopes do not cross-contaminate
+
 ## Benchmark Process
 Use `Benchmarks/` package only.
 
@@ -330,6 +399,102 @@ For signal quality:
 - run multiple times (>= 5)
 - compare medians, not single-run outliers
 - track results in repo for trend visibility
+
+Override benchmark requirements:
+- report `with_overrides_scope_entry` and `with_overrides_resolve` separately
+- include nested-depth variants (depth 1, 3, 10) for both metrics
+- include at least one contention run with concurrent tasks entering independent override scopes
+
+## Implementation Checklist (File-Mapped)
+
+### Phase 1: Measure + Fast Path
+- [ ] `Benchmarks/Sources/BoltBenchmarks/BoltBenchmarks.swift`
+  - Confirm baseline benchmark set includes:
+    - `bolt_factory_resolve_leaf`
+    - `bolt_factory_resolve_root`
+    - `bolt_factory_resolve_with_params`
+    - `bolt_singleton_warm_resolve`
+    - `bolt_with_overrides_scope`
+  - Add missing Bolt benchmarks needed by the matrix (including split override metrics if not already present).
+- [ ] `Benchmarks/Sources/BoltBenchmarks/main.swift`
+  - Ensure all Bolt benchmark registrations are wired and discoverable in one run.
+- [ ] `Benchmarks/README.md`
+  - Document baseline capture process and benchmark names used for Phase 1 sign-off.
+- [ ] `Sources/Bolt/Container.swift`
+  - Implement resolver shape dispatch fast path while keeping one resolver model.
+  - Read registration metadata once per resolve call and avoid repeated lookups/probes.
+  - Keep generic fallback behavior for parameterized and less-common paths.
+  - Ensure cycle detection and crash-on-failure diagnostics are preserved.
+- [ ] `Sources/Bolt/Registration.swift`
+  - Add or expose minimal internal metadata needed for resolver fast-path shape checks.
+- [ ] `Tests/BoltTests/ContainerResolutionTests.swift`
+  - Add/adjust behavior tests covering factory no-params, factory params, and root resolution after fast-path refactor.
+- [ ] `Tests/BoltTests/ContainerScopingTests.swift`
+  - Ensure override precedence behavior remains unchanged after resolver fast-path work.
+- [ ] Verification command
+  - Run `swift test`.
+  - Run benchmark command from `Benchmarks/` at least 5 times and record medians as baseline+after.
+
+### Phase 2: Singleton Improvements
+- [ ] `Sources/Bolt/Container.swift`
+  - Introduce internal singleton storage based on per-key/per-registration singleton cells.
+  - Replace `singletonInitializations`/`DispatchGroup` state-machine path with WhoopDI-like per-cell DCL.
+  - Keep user factory execution outside any global singleton map lock.
+  - Preserve exactly-once initialization under contention.
+- [ ] `Sources/Bolt/Registration.swift`
+  - Confirm singleton registration metadata exposes all information needed by new singleton storage path.
+- [ ] `Tests/BoltTests/ContainerConcurrencyTests.swift`
+  - Extend contention tests to assert exactly-once singleton initialization with concurrent resolves.
+- [ ] `Tests/BoltTests/ContainerResolutionTests.swift`
+  - Keep/extend warm and cold singleton correctness assertions (identity, reset behavior).
+- [ ] `Benchmarks/Sources/BoltBenchmarks/BoltBenchmarks.swift`
+  - Ensure singleton benchmarks include both cold and warm cases for Bolt.
+- [ ] Verification command
+  - Run `swift test`.
+  - Run benchmark command from `Benchmarks/` and capture before/after medians.
+
+### Phase 3: Override Improvements
+- [ ] `Sources/Bolt/Container.swift`
+  - Add task-local override context/layer state.
+  - Refactor `withScopedOverrides` to push/pop task-local override context rather than creating derived containers.
+  - Remove or fully retire `makeDerivedContainer` override path.
+  - Update `resolve` to check active override context first, then base registrations.
+  - Keep duplicate-key handling within one override block consistent with strict/collecting behavior.
+  - Define singleton ownership rule in code:
+    - overridden key => scope-local singleton cache
+    - non-overridden key => base singleton cache
+- [ ] `Sources/Bolt/Bolt.swift`
+  - Confirm facade `withOverrides` entry points continue delegating to lexical/task-local scoped behavior.
+- [ ] `Sources/Bolt/Validation.swift`
+  - Ensure validator behavior remains deterministic after override plumbing refactor (merged effective view or explicit base+override strategy).
+- [ ] `Tests/BoltTests/ContainerScopingTests.swift`
+  - Verify nested precedence (top-most wins, restore on unwind).
+  - Verify override singleton cache lifecycle and no leakage after scope exit.
+  - Verify concurrent task-local isolation for independent override scopes.
+- [ ] `Tests/BoltTests/BoltSetupAndOverrideTests.swift`
+  - Preserve parameterized override behavior and setup-path override semantics.
+- [ ] `Benchmarks/Sources/BoltBenchmarks/BoltBenchmarks.swift`
+  - Split Bolt override measurement into:
+    - `with_overrides_scope_entry`
+    - `with_overrides_resolve`
+  - Add nested depth variants (1, 3, 10).
+  - Add contention scenario for concurrent independent override scopes.
+- [ ] `Benchmarks/README.md`
+  - Document new Bolt override benchmark names/interpretation.
+- [ ] Verification command
+  - Run `swift test`.
+  - Run benchmark command from `Benchmarks/` and capture before/after medians.
+
+### Phase 4: Tightening + Re-evaluate
+- [ ] `Sources/Bolt/Container.swift`
+  - Apply low-risk hot-path cleanup after singleton+override refactors are stable.
+  - Keep diagnostics on failure paths only; avoid overhead in common resolve paths.
+- [ ] `Tests/BoltTests/*`
+  - Add targeted regression tests for any new fast-path branches.
+- [ ] `Benchmarks/Sources/BoltBenchmarks/*`
+  - Re-run full suite and compare medians to baseline artifacts.
+- [ ] Release gate
+  - Reject patches that miss success criteria or increase complexity without measurable wins.
 
 ## Open Questions
 - Do we want a CI workflow to run benchmarks manually (`workflow_dispatch`) and upload artifacts?

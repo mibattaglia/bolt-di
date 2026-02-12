@@ -454,7 +454,7 @@ Override benchmark requirements:
   - Run benchmark command from `Benchmarks/` and capture before/after medians.
 
 ### Phase 3: Override Improvements
-- [ ] `Sources/Bolt/Container.swift`
+- [x] `Sources/Bolt/Container.swift`
   - Add task-local override context/layer state.
   - Refactor `withScopedOverrides` to push/pop task-local override context rather than creating derived containers.
   - Remove or fully retire `makeDerivedContainer` override path.
@@ -463,25 +463,25 @@ Override benchmark requirements:
   - Define singleton ownership rule in code:
     - overridden key => scope-local singleton cache
     - non-overridden key => base singleton cache
-- [ ] `Sources/Bolt/Bolt.swift`
+- [x] `Sources/Bolt/Bolt.swift`
   - Confirm facade `withOverrides` entry points continue delegating to lexical/task-local scoped behavior.
-- [ ] `Sources/Bolt/Validation.swift`
+- [x] `Sources/Bolt/Validation.swift`
   - Ensure validator behavior remains deterministic after override plumbing refactor (merged effective view or explicit base+override strategy).
-- [ ] `Tests/BoltTests/ContainerScopingTests.swift`
+- [x] `Tests/BoltTests/ContainerScopingTests.swift`
   - Verify nested precedence (top-most wins, restore on unwind).
   - Verify override singleton cache lifecycle and no leakage after scope exit.
   - Verify concurrent task-local isolation for independent override scopes.
-- [ ] `Tests/BoltTests/BoltSetupAndOverrideTests.swift`
+- [x] `Tests/BoltTests/BoltSetupAndOverrideTests.swift`
   - Preserve parameterized override behavior and setup-path override semantics.
-- [ ] `Benchmarks/Sources/BoltBenchmarks/BoltBenchmarks.swift`
+- [x] `Benchmarks/Sources/BoltBenchmarks/BoltBenchmarks.swift`
   - Split Bolt override measurement into:
     - `with_overrides_scope_entry`
     - `with_overrides_resolve`
   - Add nested depth variants (1, 3, 10).
   - Add contention scenario for concurrent independent override scopes.
-- [ ] `Benchmarks/README.md`
+- [x] `Benchmarks/README.md`
   - Document new Bolt override benchmark names/interpretation.
-- [ ] Verification command
+- [x] Verification command
   - Run `swift test`.
   - Run benchmark command from `Benchmarks/` and capture before/after medians.
 

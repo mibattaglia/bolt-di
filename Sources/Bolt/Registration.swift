@@ -3,13 +3,32 @@ import Foundation
 public struct Registration {
     public let key: Key
     public let scope: Scope
+    let shape: RegistrationShape
 
     let factory: ErasedFactory
 
     init(key: Key, scope: Scope, factory: ErasedFactory) {
         self.key = key
         self.scope = scope
+        self.shape = RegistrationShape(scope: scope, hasParameters: factory.parameterType != nil)
         self.factory = factory
+    }
+}
+
+enum RegistrationShape {
+    case factoryNoParameters
+    case factoryWithParameters
+    case singletonNoParameters
+
+    init(scope: Scope, hasParameters: Bool) {
+        switch (scope, hasParameters) {
+        case (.factory, false):
+            self = .factoryNoParameters
+        case (.factory, true):
+            self = .factoryWithParameters
+        case (.singleton, _):
+            self = .singletonNoParameters
+        }
     }
 }
 

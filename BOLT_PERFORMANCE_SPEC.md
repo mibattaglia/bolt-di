@@ -408,7 +408,7 @@ Override benchmark requirements:
 ## Implementation Checklist (File-Mapped)
 
 ### Phase 1: Measure + Fast Path
-- [ ] `Benchmarks/Sources/BoltBenchmarks/BoltBenchmarks.swift`
+- [x] `Benchmarks/Sources/BoltBenchmarks/BoltBenchmarks.swift`
   - Confirm baseline benchmark set includes:
     - `bolt_factory_resolve_leaf`
     - `bolt_factory_resolve_root`
@@ -416,40 +416,40 @@ Override benchmark requirements:
     - `bolt_singleton_warm_resolve`
     - `bolt_with_overrides_scope`
   - Add missing Bolt benchmarks needed by the matrix (including split override metrics if not already present).
-- [ ] `Benchmarks/Sources/BoltBenchmarks/main.swift`
+- [x] `Benchmarks/Sources/BoltBenchmarks/main.swift`
   - Ensure all Bolt benchmark registrations are wired and discoverable in one run.
-- [ ] `Benchmarks/README.md`
+- [x] `Benchmarks/README.md`
   - Document baseline capture process and benchmark names used for Phase 1 sign-off.
-- [ ] `Sources/Bolt/Container.swift`
+- [x] `Sources/Bolt/Container.swift`
   - Implement resolver shape dispatch fast path while keeping one resolver model.
   - Read registration metadata once per resolve call and avoid repeated lookups/probes.
   - Keep generic fallback behavior for parameterized and less-common paths.
   - Ensure cycle detection and crash-on-failure diagnostics are preserved.
-- [ ] `Sources/Bolt/Registration.swift`
+- [x] `Sources/Bolt/Registration.swift`
   - Add or expose minimal internal metadata needed for resolver fast-path shape checks.
-- [ ] `Tests/BoltTests/ContainerResolutionTests.swift`
+- [x] `Tests/BoltTests/ContainerResolutionTests.swift`
   - Add/adjust behavior tests covering factory no-params, factory params, and root resolution after fast-path refactor.
-- [ ] `Tests/BoltTests/ContainerScopingTests.swift`
+- [x] `Tests/BoltTests/ContainerScopingTests.swift`
   - Ensure override precedence behavior remains unchanged after resolver fast-path work.
-- [ ] Verification command
+- [x] Verification command
   - Run `swift test`.
   - Run benchmark command from `Benchmarks/` at least 5 times and record medians as baseline+after.
 
 ### Phase 2: Singleton Improvements
-- [ ] `Sources/Bolt/Container.swift`
+- [x] `Sources/Bolt/Container.swift`
   - Introduce internal singleton storage based on per-key/per-registration singleton cells.
   - Replace `singletonInitializations`/`DispatchGroup` state-machine path with WhoopDI-like per-cell DCL.
   - Keep user factory execution outside any global singleton map lock.
   - Preserve exactly-once initialization under contention.
-- [ ] `Sources/Bolt/Registration.swift`
+- [x] `Sources/Bolt/Registration.swift`
   - Confirm singleton registration metadata exposes all information needed by new singleton storage path.
-- [ ] `Tests/BoltTests/ContainerConcurrencyTests.swift`
+- [x] `Tests/BoltTests/ContainerConcurrencyTests.swift`
   - Extend contention tests to assert exactly-once singleton initialization with concurrent resolves.
-- [ ] `Tests/BoltTests/ContainerResolutionTests.swift`
+- [x] `Tests/BoltTests/ContainerResolutionTests.swift`
   - Keep/extend warm and cold singleton correctness assertions (identity, reset behavior).
-- [ ] `Benchmarks/Sources/BoltBenchmarks/BoltBenchmarks.swift`
+- [x] `Benchmarks/Sources/BoltBenchmarks/BoltBenchmarks.swift`
   - Ensure singleton benchmarks include both cold and warm cases for Bolt.
-- [ ] Verification command
+- [x] Verification command
   - Run `swift test`.
   - Run benchmark command from `Benchmarks/` and capture before/after medians.
 

@@ -9,8 +9,7 @@ public final class Container: Resolver, @unchecked Sendable {
 
     private let lock = NSLock()
     private var baseRegistrations: [Key: Registration] = [:]
-    private var baseSingletons: [Key: Any] = [:]
-    private var singletonInitializations: [Key: DispatchGroup] = [:]
+    private var baseSingletonStore = SingletonStore()
     private let registrationBehavior: RegistrationBehavior
     private var validationErrors: [ValidationError] = []
 
@@ -46,18 +45,14 @@ public final class Container: Resolver, @unchecked Sendable {
     }
 
     public func resetScopes() {
-        self.lock.withLock {
-            self.baseSingletons.removeAll()
-            self.singletonInitializations.removeAll()
-        }
+        self.baseSingletonStore.removeAll()
     }
 
     public func resetAll() {
         self.lock.withLock {
             self.baseRegistrations.removeAll()
-            self.baseSingletons.removeAll()
-            self.singletonInitializations.removeAll()
         }
+        self.baseSingletonStore.removeAll()
     }
 
     fileprivate func resolve<T>(
@@ -70,48 +65,93 @@ public final class Container: Resolver, @unchecked Sendable {
             fatalError(Self.missingRegistrationMessage(for: key))
         }
 
-        if registration.scope == .singleton {
-            let state = self.lock.withLock {
-                self.singletonState(for: key)
+        switch registration.shape {
+        case .factoryNoParameters:
+            if params != nil {
+                fatalError(Self.unexpectedParameterMessage(for: key))
             }
-            switch state {
-            case .cached(let cached):
-                return Self.castOrFail(cached, expected: type, key: key)
-            case .waiting(let inFlight):
-                inFlight.wait()
-                return self.resolve(type, named: named, params: params, context: context)
-            case .initialize(let inFlight):
-                let resolved = self.buildValue(
-                    type,
-                    key: key,
-                    registration: registration,
-                    params: params,
-                    context: context
+            return self.resolveFactoryNoParameters(
+                type,
+                key: key,
+                registration: registration,
+                context: context
+            )
+        case .factoryWithParameters:
+            guard let params else {
+                fatalError(
+                    Self.missingParameterMessage(
+                        for: key,
+                        expected: registration.factory.parameterType!
+                    )
                 )
-                let finalValue: Any = self.lock.withLock {
-                    defer {
-                        self.singletonInitializations.removeValue(forKey: key)
-                        inFlight.leave()
-                    }
-                    if let cached = self.baseSingletons[key] {
-                        return cached
-                    }
-                    self.baseSingletons[key] = resolved
-                    return resolved
-                }
-                return Self.castOrFail(finalValue, expected: type, key: key)
             }
+            return self.resolveFactoryWithParameters(
+                type,
+                key: key,
+                registration: registration,
+                params: params,
+                context: context
+            )
+        case .singletonNoParameters:
+            if params != nil {
+                fatalError(Self.unexpectedParameterMessage(for: key))
+            }
+            return self.resolveSingletonNoParameters(
+                type,
+                key: key,
+                registration: registration,
+                context: context
+            )
         }
-
-        return self.buildValue(type, key: key, registration: registration, params: params, context: context)
     }
 
-    private func buildValue<T>(
+    private func resolveFactoryNoParameters<T>(
         _ type: T.Type,
         key: Key,
         registration: Registration,
-        params: Any?,
         context: ResolutionContext
+    ) -> T {
+        let resolved = self.resolveWithCycleTracking(key: key, context: context) {
+            registration.factory.factory(context, nil)
+        }
+        return Self.castOrFail(resolved, expected: type, key: key)
+    }
+
+    private func resolveFactoryWithParameters<T>(
+        _ type: T.Type,
+        key: Key,
+        registration: Registration,
+        params: Any,
+        context: ResolutionContext
+    ) -> T {
+        let resolved = self.resolveWithCycleTracking(key: key, context: context) {
+            registration.factory.factory(context, params)
+        }
+        return Self.castOrFail(resolved, expected: type, key: key)
+    }
+
+    private func resolveSingletonNoParameters<T>(
+        _ type: T.Type,
+        key: Key,
+        registration: Registration,
+        context: ResolutionContext
+    ) -> T {
+        if let cached = self.baseSingletonStore.cachedValue(for: key) {
+            return Self.castOrFail(cached, expected: type, key: key)
+        }
+
+        let resolved = self.resolveWithCycleTracking(key: key, context: context) {
+            self.baseSingletonStore.getOrCreateValue(for: key) {
+                registration.factory.factory(context, nil)
+            }
+        }
+        return Self.castOrFail(resolved, expected: type, key: key)
+    }
+
+    private func resolveWithCycleTracking<T>(
+        key: Key,
+        context: ResolutionContext,
+        _ body: () -> T
     ) -> T {
         if context.stack.contains(key) {
             let cycle = context.stack + [key]
@@ -123,23 +163,7 @@ public final class Container: Resolver, @unchecked Sendable {
             _ = context.stack.popLast()
         }
 
-        let hasParam = params != nil
-        let wantsParam = registration.factory.parameterType != nil
-        if hasParam && !wantsParam {
-            fatalError(Self.unexpectedParameterMessage(for: key))
-        }
-        if wantsParam && !hasParam {
-            fatalError(
-                Self.missingParameterMessage(
-                    for: key,
-                    expected: registration.factory.parameterType!
-                )
-            )
-        }
-
-        let resolved = registration.factory.factory(context, params)
-
-        return Self.castOrFail(resolved, expected: type, key: key)
+        return body()
     }
 
     func collectedValidationErrors() -> [ValidationError] {
@@ -189,9 +213,10 @@ public final class Container: Resolver, @unchecked Sendable {
     private func makeDerivedContainer(with overrides: [Registration]) -> Container {
         let derived = Container(registrationBehavior: self.registrationBehavior)
 
-        let (baseRegistrationsSnapshot, baseSingletonsSnapshot, validationErrorsSnapshot) = self.lock.withLock {
-            (self.baseRegistrations, self.baseSingletons, self.validationErrors)
+        let (baseRegistrationsSnapshot, validationErrorsSnapshot) = self.lock.withLock {
+            (self.baseRegistrations, self.validationErrors)
         }
+        let baseSingletonsSnapshot = self.baseSingletonStore.snapshotValues()
 
         var mergedRegistrations = baseRegistrationsSnapshot
         var overrideKeys = Set<Key>()
@@ -228,23 +253,10 @@ public final class Container: Resolver, @unchecked Sendable {
 
         derived.lock.withLock {
             derived.baseRegistrations = mergedRegistrations
-            derived.baseSingletons = mergedSingletons
             derived.validationErrors = validationErrorsSnapshot
         }
+        derived.baseSingletonStore = SingletonStore(seed: mergedSingletons)
         return derived
-    }
-
-    private func singletonState(for key: Key) -> SingletonState {
-        if let cached = self.baseSingletons[key] {
-            return .cached(cached)
-        }
-        if let inFlight = self.singletonInitializations[key] {
-            return .waiting(inFlight)
-        }
-        let inFlight = DispatchGroup()
-        inFlight.enter()
-        self.singletonInitializations[key] = inFlight
-        return .initialize(inFlight)
     }
 
     private static func castOrFail<T>(_ value: Any, expected: T.Type, key: Key) -> T {
@@ -307,12 +319,6 @@ public final class Container: Resolver, @unchecked Sendable {
     }
 }
 
-private enum SingletonState {
-    case cached(Any)
-    case waiting(DispatchGroup)
-    case initialize(DispatchGroup)
-}
-
 enum RegistrationBehavior {
     case strict
     case collecting
@@ -340,5 +346,79 @@ extension NSLock {
         self.lock()
         defer { self.unlock() }
         return body()
+    }
+}
+
+private final class SingletonStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cells: [Key: SingletonCell]
+
+    init(seed: [Key: Any] = [:]) {
+        self.cells = seed.mapValues { SingletonCell(cached: $0) }
+    }
+
+    func getOrCreateValue(for key: Key, _ build: () -> Any) -> Any {
+        let cell = self.lock.withLock {
+            if let existing = self.cells[key] {
+                return existing
+            }
+            let newCell = SingletonCell()
+            self.cells[key] = newCell
+            return newCell
+        }
+        return cell.getOrCreate(build)
+    }
+
+    func cachedValue(for key: Key) -> Any? {
+        let cell = self.lock.withLock { self.cells[key] }
+        return cell?.cachedValue
+    }
+
+    func removeAll() {
+        self.lock.withLock {
+            self.cells.removeAll()
+        }
+    }
+
+    func snapshotValues() -> [Key: Any] {
+        let snapshot = self.lock.withLock { self.cells }
+        var values: [Key: Any] = [:]
+        values.reserveCapacity(snapshot.count)
+        for (key, cell) in snapshot {
+            if let value = cell.cachedValue {
+                values[key] = value
+            }
+        }
+        return values
+    }
+}
+
+private final class SingletonCell: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Any?
+
+    init(cached: Any? = nil) {
+        self.value = cached
+    }
+
+    var cachedValue: Any? {
+        self.value
+    }
+
+    func getOrCreate(_ build: () -> Any) -> Any {
+        if let value = self.value {
+            return value
+        }
+
+        self.lock.lock()
+        defer { self.lock.unlock() }
+
+        if let value = self.value {
+            return value
+        }
+
+        let created = build()
+        self.value = created
+        return created
     }
 }

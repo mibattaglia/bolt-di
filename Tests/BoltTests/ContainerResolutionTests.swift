@@ -13,6 +13,14 @@ private final class UserService {
     }
 }
 
+private final class RootService {
+    let userService: UserService
+
+    init(userService: UserService) {
+        self.userService = userService
+    }
+}
+
 @Suite("Container Resolution")
 struct ContainerResolutionSuite {
     @Test func factoryReturnsNewInstanceEachResolve() {
@@ -52,6 +60,26 @@ struct ContainerResolutionSuite {
         let service: UserService = container.get()
 
         #expect(service.api === api)
+    }
+
+    @Test func factoryRootResolutionBuildsGraphEachTime() {
+        let container = Container()
+        container.register {
+            Factory(APIClient.self) { _ in APIClient() }
+            Factory(UserService.self) { resolver in
+                UserService(api: resolver.get(APIClient.self))
+            }
+            Factory(RootService.self) { resolver in
+                RootService(userService: resolver.get(UserService.self))
+            }
+        }
+
+        let first: RootService = container.get()
+        let second: RootService = container.get()
+
+        #expect(first !== second)
+        #expect(first.userService !== second.userService)
+        #expect(first.userService.api !== second.userService.api)
     }
 }
 

@@ -111,35 +111,9 @@ struct BoltValidatorSuite {
         #expect(errors.first?.message.contains("ModuleCycleLeaf") == true)
     }
 
-    @Test func strictTestModeReportsMissingRequiredRegistrations() {
-        let container = Container()
-        container.register {
-            Factory(String.self) { _ in "ok" }
-        }
-
-        let validator = BoltValidator(container: container)
+    @Test func moduleValidationConvenienceUsesModuleGraph() {
         var errors: [ValidationError] = []
-        validator.validate(mode: .strictTest, required: [ValidationRequirement(Int.self)]) { error in
-            errors.append(error)
-        }
-
-        #expect(errors.count == 1)
-        #expect(errors.first?.kind == .missingRegistration)
-        #expect(errors.first?.dependency?.typeName == String(reflecting: Int.self))
-    }
-
-    @Test func strictTestModePassesWhenRequiredRegistrationsExist() {
-        let container = Container()
-        container.register {
-            Factory(String.self) { _ in "ok" }
-        }
-
-        let validator = BoltValidator(container: container)
-        var errors: [ValidationError] = []
-        validator.validate(
-            mode: .strictTest,
-            required: [ValidationRequirement(String.self)]
-        ) { error in
+        BoltValidator.validate(module: ValidatorDuplicateModuleA()) { error in
             errors.append(error)
         }
 

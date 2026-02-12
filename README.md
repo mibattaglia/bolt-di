@@ -160,17 +160,10 @@ validator.validate { error in
 }
 ```
 
-Use strict test mode to enforce required registrations:
+Validate a single feature module (including its `dependentModules`) directly:
 
 ```swift
-let validator = BoltValidator(container: Bolt.shared)
-validator.validate(
-  mode: .strictTest,
-  required: [
-    ValidationRequirement(APIClient.self),
-    ValidationRequirement(UserService.self)
-  ]
-) { error in
+BoltValidator.validate(module: NetworkModule()) { error in
   print(error.message)
 }
 ```

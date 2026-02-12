@@ -29,21 +29,12 @@ public struct ValidationError: Error, Sendable {
     }
 }
 
-public enum ValidationMode: Sendable {
-    case basic
-    case strictTest
-}
-
-public struct ValidationRequirement: Sendable {
-    let key: Key
-
-    public init<T>(_ type: T.Type = T.self, named: String? = nil) {
-        self.key = Key(type, name: named)
-    }
-}
-
 public struct BoltValidator {
     private let container: Container
+
+    public static func validate(module: DependencyModule, _ onError: (ValidationError) -> Void) {
+        BoltValidator(modules: [module]).validate(onError)
+    }
 
     public init(container: Container) {
         self.container = container
@@ -77,14 +68,6 @@ public struct BoltValidator {
     }
 
     public func validate(_ onError: (ValidationError) -> Void) {
-        self.validate(mode: .basic, required: [], onError)
-    }
-
-    public func validate(
-        mode: ValidationMode = .basic,
-        required requirements: [ValidationRequirement] = [],
-        _ onError: (ValidationError) -> Void
-    ) {
         let registrations = self.container.effectiveRegistrationsForValidation()
 
         for error in self.container.collectedValidationErrors() {
@@ -95,12 +78,6 @@ public struct BoltValidator {
             if let error = self.typeMismatchError(for: registration) {
                 onError(error)
             }
-        }
-
-        guard mode == .strictTest else { return }
-        for requirement in requirements {
-            guard registrations[requirement.key] == nil else { continue }
-            onError(self.missingRegistrationError(for: requirement.key))
         }
     }
 
@@ -118,19 +95,6 @@ public struct BoltValidator {
             dependency: descriptor,
             message:
                 "Bolt validation failed: Type mismatch for \(registration.key.typeName) (name: \(registration.key.name.map { "\"\($0)\"" } ?? "nil"))."
-        )
-    }
-
-    private func missingRegistrationError(for key: Key) -> ValidationError {
-        let descriptor = ValidationError.DependencyDescriptor(
-            typeName: key.typeName,
-            name: key.name
-        )
-        return ValidationError(
-            kind: .missingRegistration,
-            dependency: descriptor,
-            message:
-                "Bolt validation failed: Missing registration for \(key.typeName) (name: \(key.name.map { "\"\($0)\"" } ?? "nil"))."
         )
     }
 

@@ -1,0 +1,44 @@
+import Benchmark
+import WhoopDIKit
+
+private final class WhoopLeaf {}
+private final class WhoopMid {
+    let leaf: WhoopLeaf
+    init(leaf: WhoopLeaf) { self.leaf = leaf }
+}
+private final class WhoopRoot {
+    let mid: WhoopMid
+    init(mid: WhoopMid) { self.mid = mid }
+}
+
+private final class WhoopBenchmarkModule: DependencyModule {
+    override func defineDependencies() {
+        factory(name: "leaf_factory") { WhoopLeaf() }
+        factory(name: "mid_factory") { try WhoopMid(leaf: self.get("leaf_factory")) }
+        factory(name: "root_factory") { try WhoopRoot(mid: self.get("mid_factory")) }
+        singleton(name: "leaf_singleton") { WhoopLeaf() }
+    }
+}
+
+func registerWhoopDIBenchmarks() {
+    WhoopDI.setup(modules: [WhoopBenchmarkModule()])
+
+    benchmark("whoopdi_factory_resolve_leaf") {
+        let _: WhoopLeaf = WhoopDI.inject("leaf_factory")
+    }
+
+    benchmark("whoopdi_factory_resolve_root") {
+        let _: WhoopRoot = WhoopDI.inject("root_factory")
+    }
+
+    benchmark("whoopdi_singleton_warm_resolve") {
+        let _: WhoopLeaf = WhoopDI.inject("leaf_singleton")
+        let _: WhoopLeaf = WhoopDI.inject("leaf_singleton")
+    }
+
+    benchmark("whoopdi_local_inject_scope") {
+        let _: WhoopRoot = WhoopDI.inject("root_factory") { module in
+            module.factory(name: "leaf_factory") { WhoopLeaf() }
+        }
+    }
+}

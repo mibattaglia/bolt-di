@@ -1,5 +1,5 @@
 open class DependencyModule {
-  public init() {}
+    public init() {}
 
-  open func defineDependencies(into container: Container) {}
+    open func defineDependencies(into container: Container) {}
 }

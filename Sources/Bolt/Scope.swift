@@ -1,4 +1,4 @@
 public enum Scope {
-  case factory
-  case singleton
+    case factory
+    case singleton
 }

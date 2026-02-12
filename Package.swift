@@ -23,5 +23,6 @@ let package = Package(
       name: "BoltTests",
       dependencies: ["Bolt"]
     ),
-  ]
+  ],
+  swiftLanguageModes: [.v6]
 )

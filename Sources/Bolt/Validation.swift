@@ -45,14 +45,24 @@ public struct BoltValidator {
     }
 
     public func validate(_ onError: (ValidationError) -> Void) {
+        let registrations = self.container.effectiveRegistrationsForValidation()
+
         for error in self.container.collectedValidationErrors() {
             onError(error)
         }
 
-        for registration in self.container.effectiveRegistrationsForValidation().values {
+        for registration in registrations.values {
             if let error = self.typeMismatchError(for: registration) {
                 onError(error)
             }
+        }
+
+        for error in self.missingRegistrationErrors(registrations: registrations) {
+            onError(error)
+        }
+
+        for error in self.circularDependencyErrors(registrations: registrations) {
+            onError(error)
         }
     }
 
@@ -71,5 +81,78 @@ public struct BoltValidator {
             message:
                 "Bolt validation failed: Type mismatch for \(registration.key.typeName) (name: \(registration.key.name.map { "\"\($0)\"" } ?? "nil"))."
         )
+    }
+
+    private func missingRegistrationErrors(registrations: [Key: Registration]) -> [ValidationError] {
+        var missingKeys = Set<Key>()
+        for registration in registrations.values {
+            for dependency in registration.dependencies where registrations[dependency] == nil {
+                missingKeys.insert(dependency)
+            }
+        }
+
+        return missingKeys.map { key in
+            let descriptor = ValidationError.DependencyDescriptor(typeName: key.typeName, name: key.name)
+            return ValidationError(
+                kind: .missingRegistration,
+                dependency: descriptor,
+                message:
+                    "Bolt: Missing registration for \(key.typeName) (name: \(key.name.map { "\"\($0)\"" } ?? "nil"))."
+            )
+        }
+    }
+
+    private func circularDependencyErrors(registrations: [Key: Registration]) -> [ValidationError] {
+        enum VisitState {
+            case visiting
+            case visited
+        }
+
+        var visitStates: [Key: VisitState] = [:]
+        var recursionStack: [Key] = []
+        var cycleMessages = Set<String>()
+        var errors: [ValidationError] = []
+
+        func dfs(_ key: Key) {
+            visitStates[key] = .visiting
+            recursionStack.append(key)
+
+            let dependencies = registrations[key]?.dependencies ?? []
+            for dependency in dependencies where registrations[dependency] != nil {
+                if visitStates[dependency] == .visiting {
+                    if let index = recursionStack.lastIndex(of: dependency) {
+                        let cycle = Array(recursionStack[index...]) + [dependency]
+                        let cyclePath = cycle.map {
+                            "\($0.typeName) (name: \($0.name.map { "\"\($0)\"" } ?? "nil"))"
+                        }.joined(separator: " -> ")
+                        let message = "Bolt: Circular dependency detected: \(cyclePath)."
+                        if cycleMessages.insert(message).inserted {
+                            let descriptor = ValidationError.DependencyDescriptor(
+                                typeName: dependency.typeName,
+                                name: dependency.name
+                            )
+                            errors.append(
+                                ValidationError(
+                                    kind: .circularDependency,
+                                    dependency: descriptor,
+                                    message: message
+                                )
+                            )
+                        }
+                    }
+                } else if visitStates[dependency] == nil {
+                    dfs(dependency)
+                }
+            }
+
+            _ = recursionStack.popLast()
+            visitStates[key] = .visited
+        }
+
+        for key in registrations.keys where visitStates[key] == nil {
+            dfs(key)
+        }
+
+        return errors
     }
 }

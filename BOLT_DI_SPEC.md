@@ -8,7 +8,7 @@ Date: 2026-02-11
 - [x] Phase 3: Container engine (strict mode)
 - [x] Phase 4: Override and task-local scoping
 - [x] Phase 5: Bolt facade and property wrappers
-- [ ] Phase 6: Validation subsystem
+- [x] Phase 6: Validation subsystem
 - [ ] Phase 7: Full test suite and packaging finish
 
 ## References

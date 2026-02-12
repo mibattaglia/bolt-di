@@ -18,6 +18,44 @@ private final class ValidatorDuplicateModuleB: DependencyModule {
     }
 }
 
+private final class MissingDependencyMarker {}
+
+private final class ValidatorMissingDependencyModule: DependencyModule {
+    override func defineDependencies(into container: Container) {
+        container.register {
+            Factory(
+                Int.self,
+                dependencies: [Key(MissingDependencyMarker.self)]
+            ) { _ in
+                1
+            }
+        }
+    }
+}
+
+private final class CycleA {}
+private final class CycleB {}
+
+private final class ValidatorCircularDependencyModule: DependencyModule {
+    override func defineDependencies(into container: Container) {
+        container.register {
+            Factory(
+                CycleA.self,
+                dependencies: [Key(CycleB.self)]
+            ) { _ in
+                CycleA()
+            }
+
+            Factory(
+                CycleB.self,
+                dependencies: [Key(CycleA.self)]
+            ) { _ in
+                CycleB()
+            }
+        }
+    }
+}
+
 @Suite("Bolt Validator")
 struct BoltValidatorSuite {
     @Test func detectsDuplicateRegistrationsAcrossModules() {
@@ -41,6 +79,7 @@ struct BoltValidatorSuite {
             Registration(
                 key: Key(String.self),
                 scope: .factory,
+                dependencies: [],
                 factory: ErasedFactory(
                     outputType: Int.self,
                     parameterType: nil,
@@ -74,5 +113,32 @@ struct BoltValidatorSuite {
         }
 
         #expect(errors.isEmpty)
+    }
+
+    @Test func detectsMissingRegistrationsFromDependencyMetadata() {
+        let validator = BoltValidator(modules: [ValidatorMissingDependencyModule()])
+
+        var errors: [ValidationError] = []
+        validator.validate { error in
+            errors.append(error)
+        }
+
+        #expect(errors.count == 1)
+        #expect(errors.first?.kind == .missingRegistration)
+        #expect(errors.first?.dependency?.typeName == String(reflecting: MissingDependencyMarker.self))
+    }
+
+    @Test func detectsCircularDependenciesFromDependencyMetadata() {
+        let validator = BoltValidator(modules: [ValidatorCircularDependencyModule()])
+
+        var errors: [ValidationError] = []
+        validator.validate { error in
+            errors.append(error)
+        }
+
+        #expect(errors.count == 1)
+        #expect(errors.first?.kind == .circularDependency)
+        #expect(errors.first?.message.contains("CycleA") == true)
+        #expect(errors.first?.message.contains("CycleB") == true)
     }
 }

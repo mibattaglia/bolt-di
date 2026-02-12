@@ -3,12 +3,14 @@ import Foundation
 public struct Registration {
     public let key: Key
     public let scope: Scope
+    let dependencies: [Key]
 
     let factory: ErasedFactory
 
-    init(key: Key, scope: Scope, factory: ErasedFactory) {
+    init(key: Key, scope: Scope, dependencies: [Key], factory: ErasedFactory) {
         self.key = key
         self.scope = scope
+        self.dependencies = dependencies
         self.factory = factory
     }
 }
@@ -22,15 +24,18 @@ struct ErasedFactory {
 public struct Factory<T> {
     private let type: T.Type
     private let name: String?
+    private let dependencies: [Key]
     private let factory: (Resolver) -> T
 
     public init(
         _ type: T.Type = T.self,
         named: String? = nil,
+        dependencies: [Key] = [],
         _ factory: @escaping (Resolver) -> T
     ) {
         self.type = type
         self.name = named
+        self.dependencies = dependencies
         self.factory = factory
     }
 
@@ -38,6 +43,7 @@ public struct Factory<T> {
         Registration(
             key: Key(self.type, name: self.name),
             scope: .factory,
+            dependencies: self.dependencies,
             factory: ErasedFactory(
                 outputType: T.self,
                 parameterType: nil,
@@ -50,15 +56,18 @@ public struct Factory<T> {
 public struct Singleton<T> {
     private let type: T.Type
     private let name: String?
+    private let dependencies: [Key]
     private let factory: (Resolver) -> T
 
     public init(
         _ type: T.Type = T.self,
         named: String? = nil,
+        dependencies: [Key] = [],
         _ factory: @escaping (Resolver) -> T
     ) {
         self.type = type
         self.name = named
+        self.dependencies = dependencies
         self.factory = factory
     }
 
@@ -66,6 +75,7 @@ public struct Singleton<T> {
         Registration(
             key: Key(self.type, name: self.name),
             scope: .singleton,
+            dependencies: self.dependencies,
             factory: ErasedFactory(
                 outputType: T.self,
                 parameterType: nil,
@@ -78,15 +88,18 @@ public struct Singleton<T> {
 public struct FactoryWithParams<P, T> {
     private let type: T.Type
     private let name: String?
+    private let dependencies: [Key]
     private let factory: (Resolver, P) -> T
 
     public init(
         _ type: T.Type = T.self,
         named: String? = nil,
+        dependencies: [Key] = [],
         _ factory: @escaping (Resolver, P) -> T
     ) {
         self.type = type
         self.name = named
+        self.dependencies = dependencies
         self.factory = factory
     }
 
@@ -94,6 +107,7 @@ public struct FactoryWithParams<P, T> {
         Registration(
             key: Key(self.type, name: self.name),
             scope: .factory,
+            dependencies: self.dependencies,
             factory: ErasedFactory(
                 outputType: T.self,
                 parameterType: P.self,
@@ -113,15 +127,18 @@ public struct FactoryWithParams<P, T> {
 public struct SingletonWithParams<P, T> {
     private let type: T.Type
     private let name: String?
+    private let dependencies: [Key]
     private let factory: (Resolver, P) -> T
 
     public init(
         _ type: T.Type = T.self,
         named: String? = nil,
+        dependencies: [Key] = [],
         _ factory: @escaping (Resolver, P) -> T
     ) {
         self.type = type
         self.name = named
+        self.dependencies = dependencies
         self.factory = factory
     }
 
@@ -129,6 +146,7 @@ public struct SingletonWithParams<P, T> {
         Registration(
             key: Key(self.type, name: self.name),
             scope: .singleton,
+            dependencies: self.dependencies,
             factory: ErasedFactory(
                 outputType: T.self,
                 parameterType: P.self,

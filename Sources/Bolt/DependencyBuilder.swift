@@ -16,10 +16,6 @@ public enum DependencyBuilder {
         expression.registration
     }
 
-    public static func buildExpression<P, T>(_ expression: SingletonWithParams<P, T>) -> Registration {
-        expression.registration
-    }
-
     public static func buildExpression(_ expression: Registration) -> Registration {
         expression
     }

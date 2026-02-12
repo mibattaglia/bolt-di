@@ -32,6 +32,21 @@ private final class OrderedModuleB: DependencyModule {
     }
 }
 
+private final class LabeledModule: DependencyModule {
+    let label: String
+
+    init(label: String) {
+        self.label = label
+        super.init()
+    }
+
+    override func defineDependencies(into container: Container) {
+        container.register {
+            Factory(String.self, named: self.label) { _ in self.label }
+        }
+    }
+}
+
 @Suite("Bolt Setup And Overrides")
 struct BoltSetupAndOverridesSuite {
     @Test func setupAppliesModulesInOrderForDependentResolution() {
@@ -65,5 +80,15 @@ struct BoltSetupAndOverridesSuite {
             let restored: String = Bolt.inject(named: "greeting", params: "A")
             #expect(restored == "Base A")
         }
+    }
+
+    @Test func setupRunsDistinctModuleInstancesEvenWhenTypesMatch() {
+        Bolt.setup(modules: [LabeledModule(label: "A"), LabeledModule(label: "B")])
+
+        let first: String = Bolt.inject(named: "A")
+        let second: String = Bolt.inject(named: "B")
+
+        #expect(first == "A")
+        #expect(second == "B")
     }
 }

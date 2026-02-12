@@ -7,8 +7,8 @@ Bolt is a fast, lightweight Swift dependency injection framework with:
 - Crash-on-failure runtime resolution (`Container.get`, `Bolt.inject`, `@Injected`)
 - Result-builder registration DSL
 - Factory and singleton scopes
-- Task-local container scoping (`withContainer`) and lexical overrides (`withOverrides`)
-- Validator tooling for duplicate/type-mismatch checks and module dependency cycle checks
+- Task-local container scoping (`withContainer`) and task-local lexical overrides (`withOverrides`)
+- Validator tooling for duplicate/type-mismatch checks, module dependency cycle checks, and strict required-registration checks
 
 ## Installation
 
@@ -68,6 +68,55 @@ let service: UserService = Bolt.inject()
 - Use `withOverrides` for lexical test/customization scopes only.
 - Keep runtime lookup ergonomic by relying on inferred `resolver.get()` where context provides type information.
 
+## Scoping Patterns
+
+Use these patterns depending on what you need to change:
+
+- `Bolt.setup(modules:)`: Configure app-wide live dependencies in `Bolt.shared`.
+- `Bolt.withContainer(...)`: Swap the entire dependency graph for a lexical scope.
+- `Bolt.withOverrides { ... }`: Patch selected registrations in the current container for a lexical/task-local scope.
+
+### App setup (live graph)
+
+```swift
+Bolt.setup(modules: [
+  NetworkModule(),
+  PersistenceModule()
+])
+```
+
+### Per-test isolated container
+
+```swift
+@Test func featureUsesMockGraph() {
+  let testContainer = Container()
+  testContainer.register {
+    Factory(APIClient.self) { _ in MockAPIClient() }
+    Factory(Analytics.self) { _ in NoopAnalytics() }
+  }
+
+  Bolt.withContainer(testContainer) {
+    let feature = FeatureViewModel()
+    // assertions...
+  }
+}
+```
+
+### Focused override of one dependency
+
+```swift
+Bolt.withOverrides {
+  Factory(APIClient.self) { _ in MockAPIClient() }
+} _: {
+  let feature = FeatureViewModel()
+  // Only APIClient is overridden. Other dependencies come from the base container.
+}
+```
+
+Notes:
+- `withOverrides` targets `Container.current`: inside `withContainer`, it overrides that container; otherwise it overrides `Bolt.shared`.
+- Overrides are lexical and task-local: they are automatically restored when the closure exits.
+
 ### Named and parameterized registrations
 
 ```swift
@@ -107,6 +156,21 @@ Use `BoltValidator` for non-crashing diagnostics:
 ```swift
 let validator = BoltValidator(modules: [NetworkModule()])
 validator.validate { error in
+  print(error.message)
+}
+```
+
+Use strict test mode to enforce required registrations:
+
+```swift
+let validator = BoltValidator(container: Bolt.shared)
+validator.validate(
+  mode: .strictTest,
+  required: [
+    ValidationRequirement(APIClient.self),
+    ValidationRequirement(UserService.self)
+  ]
+) { error in
   print(error.message)
 }
 ```

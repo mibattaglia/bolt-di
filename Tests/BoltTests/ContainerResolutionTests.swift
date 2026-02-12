@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import Bolt
@@ -9,14 +10,6 @@ private final class UserService {
 
     init(api: APIClient) {
         self.api = api
-    }
-}
-
-private final class SessionClient {
-    let value: String
-
-    init(value: String) {
-        self.value = value
     }
 }
 
@@ -79,19 +72,20 @@ struct ContainerParameterizedResolutionSuite {
         #expect(sam == "Hello, Sam!")
     }
 
-    @Test func singletonWithParamsInitializesOnceAndReuses() {
+    @Test func factoryWithParamsCreatesNewInstanceEachResolve() {
         let container = Container()
         container.register {
-            SingletonWithParams(SessionClient.self) { (_: Resolver, value: String) in
-                SessionClient(value: value)
+            FactoryWithParams(NSString.self) { (_: Resolver, value: String) in
+                NSString(string: value)
             }
         }
 
-        let first: SessionClient = container.get(params: "first")
-        let second: SessionClient = container.get(params: "second")
+        let first: NSString = container.get(params: "first")
+        let second: NSString = container.get(params: "second")
 
-        #expect(first === second)
-        #expect(first.value == "first")
+        #expect(first !== second)
+        #expect(first as String == "first")
+        #expect(second as String == "second")
     }
 }
 

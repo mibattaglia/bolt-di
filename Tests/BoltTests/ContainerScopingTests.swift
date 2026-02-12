@@ -38,8 +38,8 @@ struct ContainerTaskLocalScopingSuite {
     }
 }
 
-@Suite("Container Override Layers")
-struct ContainerOverrideLayerSuite {
+@Suite("Container Scoped Overrides")
+struct ContainerScopedOverridesSuite {
     @Test func topmostOverrideWinsAndRestoresAfterPop() {
         let container = Container()
         container.register {
@@ -111,5 +111,76 @@ struct ContainerOverrideLayerSuite {
         #expect(firstLayerInstance != nil)
         #expect(secondLayerInstance != nil)
         #expect(firstLayerInstance !== secondLayerInstance)
+    }
+
+    @Test func overridesAreTaskLocalForConcurrentResolutions() async {
+        let container = Container()
+        container.register {
+            Factory(String.self) { _ in "base" }
+        }
+
+        let values = await withTaskGroup(of: String.self, returning: [String].self) { group in
+            group.addTask {
+                Bolt.withContainer(container) {
+                    Bolt.withOverrides {
+                        Factory(String.self) { _ in "task-a" }
+                    } _: {
+                        let value: String = Bolt.inject()
+                        return value
+                    }
+                }
+            }
+
+            group.addTask {
+                Bolt.withContainer(container) {
+                    Bolt.withOverrides {
+                        Factory(String.self) { _ in "task-b" }
+                    } _: {
+                        let value: String = Bolt.inject()
+                        return value
+                    }
+                }
+            }
+
+            group.addTask {
+                Bolt.withContainer(container) {
+                    let value: String = Bolt.inject()
+                    return value
+                }
+            }
+
+            var resolved: [String] = []
+            for await value in group {
+                resolved.append(value)
+            }
+            return resolved
+        }
+
+        #expect(Set(values) == ["task-a", "task-b", "base"])
+    }
+
+    @Test func asyncWithOverridesRetainsOverrideAcrossAwait() async {
+        let container = Container()
+        container.register {
+            Factory(String.self) { _ in "base" }
+        }
+
+        await Bolt.withContainer(container) {
+            let base: String = Bolt.inject()
+            #expect(base == "base")
+
+            let overridden = await Bolt.withOverrides {
+                Factory(String.self) { _ in "override" }
+            } _: {
+                await Task.yield()
+                let value: String = Bolt.inject()
+                return value
+            }
+
+            #expect(overridden == "override")
+
+            let restored: String = Bolt.inject()
+            #expect(restored == "base")
+        }
     }
 }

@@ -41,11 +41,25 @@ public enum Bolt {
         }
     }
 
+    public static func withContainer<R>(_ container: Container, _ body: () async throws -> R) async rethrows -> R {
+        try await Container.withCurrent(container) {
+            try await body()
+        }
+    }
+
     public static func withOverrides<R>(
         @DependencyBuilder _ overrides: () -> [Registration], _ body: () throws -> R
     ) rethrows -> R {
-        try Container.current.withOverrideLayer(overrides) {
+        try Container.current.withScopedOverrides(overrides) {
             try body()
+        }
+    }
+
+    public static func withOverrides<R>(
+        @DependencyBuilder _ overrides: () -> [Registration], _ body: () async throws -> R
+    ) async rethrows -> R {
+        try await Container.current.withScopedOverrides(overrides) {
+            try await body()
         }
     }
 }

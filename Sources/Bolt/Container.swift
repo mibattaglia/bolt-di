@@ -10,8 +10,7 @@ public final class Container: Resolver, @unchecked Sendable {
     private let lock = NSLock()
     private var baseRegistrations: [Key: Registration] = [:]
     private var baseSingletons: [Key: Any] = [:]
-    private var overrideLayers: [OverrideLayer] = []
-    private var singletonInitializations: [SingletonInitializationKey: DispatchGroup] = [:]
+    private var singletonInitializations: [Key: DispatchGroup] = [:]
     private let registrationBehavior: RegistrationBehavior
     private var validationErrors: [ValidationError] = []
 
@@ -50,9 +49,6 @@ public final class Container: Resolver, @unchecked Sendable {
         self.lock.withLock {
             self.baseSingletons.removeAll()
             self.singletonInitializations.removeAll()
-            for index in self.overrideLayers.indices {
-                self.overrideLayers[index].singletons.removeAll()
-            }
         }
     }
 
@@ -60,7 +56,6 @@ public final class Container: Resolver, @unchecked Sendable {
         self.lock.withLock {
             self.baseRegistrations.removeAll()
             self.baseSingletons.removeAll()
-            self.overrideLayers.removeAll()
             self.singletonInitializations.removeAll()
         }
     }
@@ -71,18 +66,13 @@ public final class Container: Resolver, @unchecked Sendable {
         -> T
     {
         let key = Key(type, name: named)
-        let lookup = self.lock.withLock {
-            self.lookupRegistration(for: key)
-        }
-        guard let lookup else {
+        guard let registration = self.lock.withLock({ self.baseRegistrations[key] }) else {
             fatalError(Self.missingRegistrationMessage(for: key))
         }
-        let registration = lookup.registration
 
         if registration.scope == .singleton {
-            let initializationKey = SingletonInitializationKey(key: key, owner: lookup.owner)
             let state = self.lock.withLock {
-                self.singletonState(for: initializationKey)
+                self.singletonState(for: key)
             }
             switch state {
             case .cached(let cached):
@@ -100,13 +90,13 @@ public final class Container: Resolver, @unchecked Sendable {
                 )
                 let finalValue: Any = self.lock.withLock {
                     defer {
-                        self.singletonInitializations.removeValue(forKey: initializationKey)
+                        self.singletonInitializations.removeValue(forKey: key)
                         inFlight.leave()
                     }
-                    if let cached = self.readSingleton(for: key, owner: lookup.owner) {
+                    if let cached = self.baseSingletons[key] {
                         return cached
                     }
-                    self.writeSingleton(resolved, for: key, owner: lookup.owner)
+                    self.baseSingletons[key] = resolved
                     return resolved
                 }
                 return Self.castOrFail(finalValue, expected: type, key: key)
@@ -163,15 +153,7 @@ public final class Container: Resolver, @unchecked Sendable {
     }
 
     func effectiveRegistrationsForValidation() -> [Key: Registration] {
-        self.lock.withLock {
-            var merged = self.baseRegistrations
-            for layer in self.overrideLayers {
-                for (key, registration) in layer.registrations {
-                    merged[key] = registration
-                }
-            }
-            return merged
-        }
+        self.lock.withLock { self.baseRegistrations }
     }
 
     static func withCurrent<R>(_ container: Container, _ body: () throws -> R) rethrows -> R {
@@ -180,80 +162,80 @@ public final class Container: Resolver, @unchecked Sendable {
         }
     }
 
-    func withOverrideLayer<R>(
+    static func withCurrent<R>(_ container: Container, _ body: () async throws -> R) async rethrows -> R {
+        try await Self.$taskLocalCurrent.withValue(container) {
+            try await body()
+        }
+    }
+
+    func withScopedOverrides<R>(
         @DependencyBuilder _ overrides: () -> [Registration], _ body: () throws -> R
     ) rethrows -> R {
-        let layerID = self.pushOverrideLayer(overrides())
-        defer {
-            self.popOverrideLayer(id: layerID)
+        let derived = self.makeDerivedContainer(with: overrides())
+        return try Self.withCurrent(derived) {
+            try body()
         }
-        return try body()
     }
 
-    private func pushOverrideLayer(_ registrations: [Registration]) -> UUID {
-        let layerID = UUID()
-        self.lock.withLock {
-            var byKey: [Key: Registration] = [:]
-            for registration in registrations {
-                if byKey[registration.key] != nil {
-                    self.handleDuplicateRegistration(for: registration.key)
-                    continue
+    func withScopedOverrides<R>(
+        @DependencyBuilder _ overrides: () -> [Registration], _ body: () async throws -> R
+    ) async rethrows -> R {
+        let derived = self.makeDerivedContainer(with: overrides())
+        return try await Self.withCurrent(derived) {
+            try await body()
+        }
+    }
+
+    private func makeDerivedContainer(with overrides: [Registration]) -> Container {
+        let derived = Container(registrationBehavior: self.registrationBehavior)
+
+        let (baseRegistrationsSnapshot, baseSingletonsSnapshot, validationErrorsSnapshot) = self.lock.withLock {
+            (self.baseRegistrations, self.baseSingletons, self.validationErrors)
+        }
+
+        var mergedRegistrations = baseRegistrationsSnapshot
+        var overrideKeys = Set<Key>()
+        for registration in overrides {
+            if overrideKeys.contains(registration.key) {
+                switch self.registrationBehavior {
+                case .strict:
+                    fatalError(Self.duplicateRegistrationMessage(for: registration.key))
+                case .collecting:
+                    let descriptor = ValidationError.DependencyDescriptor(
+                        typeName: registration.key.typeName,
+                        name: registration.key.name
+                    )
+                    self.lock.withLock {
+                        self.validationErrors.append(
+                            ValidationError(
+                                kind: .duplicateRegistration,
+                                dependency: descriptor,
+                                message: Self.duplicateRegistrationMessage(for: registration.key)
+                            )
+                        )
+                    }
                 }
-                byKey[registration.key] = registration
+                continue
             }
-            self.overrideLayers.append(OverrideLayer(id: layerID, registrations: byKey, singletons: [:]))
-        }
-        return layerID
-    }
-
-    private func popOverrideLayer(id: UUID) {
-        self.lock.withLock {
-            guard let index = self.overrideLayers.lastIndex(where: { $0.id == id }) else { return }
-            self.overrideLayers.remove(at: index)
-        }
-    }
-
-    private func lookupRegistration(for key: Key) -> RegistrationLookup? {
-        for index in self.overrideLayers.indices.reversed() {
-            guard let registration = self.overrideLayers[index].registrations[key] else { continue }
-            let cached = self.overrideLayers[index].singletons[key]
-            return RegistrationLookup(
-                registration: registration,
-                owner: .overrideLayer(id: self.overrideLayers[index].id),
-                cachedSingleton: cached
-            )
+            overrideKeys.insert(registration.key)
+            mergedRegistrations[registration.key] = registration
         }
 
-        guard let registration = self.baseRegistrations[key] else { return nil }
-        return RegistrationLookup(
-            registration: registration,
-            owner: .base,
-            cachedSingleton: self.baseSingletons[key]
-        )
-    }
-
-    private func readSingleton(for key: Key, owner: RegistrationOwner) -> Any? {
-        switch owner {
-        case .base:
-            return self.baseSingletons[key]
-        case .overrideLayer(let id):
-            guard let index = self.overrideLayers.lastIndex(where: { $0.id == id }) else { return nil }
-            return self.overrideLayers[index].singletons[key]
+        var mergedSingletons = baseSingletonsSnapshot
+        for registration in overrides {
+            mergedSingletons.removeValue(forKey: registration.key)
         }
-    }
 
-    private func writeSingleton(_ value: Any, for key: Key, owner: RegistrationOwner) {
-        switch owner {
-        case .base:
-            self.baseSingletons[key] = value
-        case .overrideLayer(let id):
-            guard let index = self.overrideLayers.lastIndex(where: { $0.id == id }) else { return }
-            self.overrideLayers[index].singletons[key] = value
+        derived.lock.withLock {
+            derived.baseRegistrations = mergedRegistrations
+            derived.baseSingletons = mergedSingletons
+            derived.validationErrors = validationErrorsSnapshot
         }
+        return derived
     }
 
-    private func singletonState(for key: SingletonInitializationKey) -> SingletonState {
-        if let cached = self.readSingleton(for: key.key, owner: key.owner) {
+    private func singletonState(for key: Key) -> SingletonState {
+        if let cached = self.baseSingletons[key] {
             return .cached(cached)
         }
         if let inFlight = self.singletonInitializations[key] {
@@ -323,28 +305,6 @@ public final class Container: Resolver, @unchecked Sendable {
             )
         }
     }
-}
-
-private struct OverrideLayer {
-    let id: UUID
-    let registrations: [Key: Registration]
-    var singletons: [Key: Any]
-}
-
-private struct RegistrationLookup {
-    let registration: Registration
-    let owner: RegistrationOwner
-    let cachedSingleton: Any?
-}
-
-private enum RegistrationOwner: Hashable {
-    case base
-    case overrideLayer(id: UUID)
-}
-
-private struct SingletonInitializationKey: Hashable {
-    let key: Key
-    let owner: RegistrationOwner
 }
 
 private enum SingletonState {

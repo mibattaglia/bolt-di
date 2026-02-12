@@ -19,14 +19,23 @@ private final class ValidatorDuplicateModuleB: DependencyModule {
 }
 
 private final class ModuleCycleRoot: DependencyModule {
+    lazy var leaf = ModuleCycleLeaf(root: self)
+
     override var dependentModules: [DependencyModule] {
-        [ModuleCycleLeaf()]
+        [self.leaf]
     }
 }
 
 private final class ModuleCycleLeaf: DependencyModule {
+    unowned let root: ModuleCycleRoot
+
+    init(root: ModuleCycleRoot) {
+        self.root = root
+        super.init()
+    }
+
     override var dependentModules: [DependencyModule] {
-        [ModuleCycleRoot()]
+        [self.root]
     }
 }
 
@@ -100,5 +109,40 @@ struct BoltValidatorSuite {
         #expect(errors.first?.kind == .circularDependency)
         #expect(errors.first?.message.contains("ModuleCycleRoot") == true)
         #expect(errors.first?.message.contains("ModuleCycleLeaf") == true)
+    }
+
+    @Test func strictTestModeReportsMissingRequiredRegistrations() {
+        let container = Container()
+        container.register {
+            Factory(String.self) { _ in "ok" }
+        }
+
+        let validator = BoltValidator(container: container)
+        var errors: [ValidationError] = []
+        validator.validate(mode: .strictTest, required: [ValidationRequirement(Int.self)]) { error in
+            errors.append(error)
+        }
+
+        #expect(errors.count == 1)
+        #expect(errors.first?.kind == .missingRegistration)
+        #expect(errors.first?.dependency?.typeName == String(reflecting: Int.self))
+    }
+
+    @Test func strictTestModePassesWhenRequiredRegistrationsExist() {
+        let container = Container()
+        container.register {
+            Factory(String.self) { _ in "ok" }
+        }
+
+        let validator = BoltValidator(container: container)
+        var errors: [ValidationError] = []
+        validator.validate(
+            mode: .strictTest,
+            required: [ValidationRequirement(String.self)]
+        ) { error in
+            errors.append(error)
+        }
+
+        #expect(errors.isEmpty)
     }
 }

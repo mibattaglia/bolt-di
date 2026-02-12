@@ -1,0 +1,21 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcuserdatad/
+*.xcuserstate
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# macOS
+.DS_Store
+
+# Temporary files
+*.swp
+*.tmp

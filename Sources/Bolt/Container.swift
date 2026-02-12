@@ -11,6 +11,7 @@ public final class Container: Resolver, @unchecked Sendable {
     private var baseRegistrations: [Key: Registration] = [:]
     private var baseSingletons: [Key: Any] = [:]
     private var overrideLayers: [OverrideLayer] = []
+    private var singletonInitializations: [SingletonInitializationKey: DispatchGroup] = [:]
     private let registrationBehavior: RegistrationBehavior
     private var validationErrors: [ValidationError] = []
 
@@ -48,6 +49,7 @@ public final class Container: Resolver, @unchecked Sendable {
     public func resetScopes() {
         self.lock.withLock {
             self.baseSingletons.removeAll()
+            self.singletonInitializations.removeAll()
             for index in self.overrideLayers.indices {
                 self.overrideLayers[index].singletons.removeAll()
             }
@@ -59,6 +61,7 @@ public final class Container: Resolver, @unchecked Sendable {
             self.baseRegistrations.removeAll()
             self.baseSingletons.removeAll()
             self.overrideLayers.removeAll()
+            self.singletonInitializations.removeAll()
         }
     }
 
@@ -76,12 +79,50 @@ public final class Container: Resolver, @unchecked Sendable {
         }
         let registration = lookup.registration
 
-        if registration.scope == .singleton,
-            let cached = lookup.cachedSingleton
-        {
-            return Self.castOrFail(cached, expected: type, key: key)
+        if registration.scope == .singleton {
+            let initializationKey = SingletonInitializationKey(key: key, owner: lookup.owner)
+            let state = self.lock.withLock {
+                self.singletonState(for: initializationKey)
+            }
+            switch state {
+            case .cached(let cached):
+                return Self.castOrFail(cached, expected: type, key: key)
+            case .waiting(let inFlight):
+                inFlight.wait()
+                return self.resolve(type, named: named, params: params, context: context)
+            case .initialize(let inFlight):
+                let resolved = self.buildValue(
+                    type,
+                    key: key,
+                    registration: registration,
+                    params: params,
+                    context: context
+                )
+                let finalValue: Any = self.lock.withLock {
+                    defer {
+                        self.singletonInitializations.removeValue(forKey: initializationKey)
+                        inFlight.leave()
+                    }
+                    if let cached = self.readSingleton(for: key, owner: lookup.owner) {
+                        return cached
+                    }
+                    self.writeSingleton(resolved, for: key, owner: lookup.owner)
+                    return resolved
+                }
+                return Self.castOrFail(finalValue, expected: type, key: key)
+            }
         }
 
+        return self.buildValue(type, key: key, registration: registration, params: params, context: context)
+    }
+
+    private func buildValue<T>(
+        _ type: T.Type,
+        key: Key,
+        registration: Registration,
+        params: Any?,
+        context: ResolutionContext
+    ) -> T {
         if context.stack.contains(key) {
             let cycle = context.stack + [key]
             fatalError(Self.circularDependencyMessage(for: cycle))
@@ -108,19 +149,7 @@ public final class Container: Resolver, @unchecked Sendable {
 
         let resolved = registration.factory.factory(context, params)
 
-        if registration.scope == .factory {
-            return Self.castOrFail(resolved, expected: type, key: key)
-        }
-
-        let finalValue: Any = self.lock.withLock {
-            if let cached = self.readSingleton(for: key, owner: lookup.owner) {
-                return cached
-            }
-
-            self.writeSingleton(resolved, for: key, owner: lookup.owner)
-            return resolved
-        }
-        return Self.castOrFail(finalValue, expected: type, key: key)
+        return Self.castOrFail(resolved, expected: type, key: key)
     }
 
     func collectedValidationErrors() -> [ValidationError] {
@@ -217,6 +246,19 @@ public final class Container: Resolver, @unchecked Sendable {
         }
     }
 
+    private func singletonState(for key: SingletonInitializationKey) -> SingletonState {
+        if let cached = self.readSingleton(for: key.key, owner: key.owner) {
+            return .cached(cached)
+        }
+        if let inFlight = self.singletonInitializations[key] {
+            return .waiting(inFlight)
+        }
+        let inFlight = DispatchGroup()
+        inFlight.enter()
+        self.singletonInitializations[key] = inFlight
+        return .initialize(inFlight)
+    }
+
     private static func castOrFail<T>(_ value: Any, expected: T.Type, key: Key) -> T {
         guard let typed = value as? T else {
             fatalError(typeMismatchMessage(for: key, expected: expected, actual: Swift.type(of: value)))
@@ -289,9 +331,20 @@ private struct RegistrationLookup {
     let cachedSingleton: Any?
 }
 
-private enum RegistrationOwner {
+private enum RegistrationOwner: Hashable {
     case base
     case overrideLayer(id: UUID)
+}
+
+private struct SingletonInitializationKey: Hashable {
+    let key: Key
+    let owner: RegistrationOwner
+}
+
+private enum SingletonState {
+    case cached(Any)
+    case waiting(DispatchGroup)
+    case initialize(DispatchGroup)
 }
 
 enum RegistrationBehavior {

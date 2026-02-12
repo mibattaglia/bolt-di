@@ -36,6 +36,15 @@ let package = Package(
 pod 'Bolt'
 ```
 
+## Examples
+
+Real-code examples are available in:
+- `Examples/BasicCompositionExample.swift`
+- `Examples/ScopedOverrideExample.swift`
+- `Examples/ValidationExample.swift`
+
+These files are documentation/examples only and are not included in SPM or CocoaPods distribution.
+
 ## Runtime Usage
 
 ```swift
@@ -45,7 +54,8 @@ final class NetworkModule: DependencyModule {
       Singleton(APIClient.self) { _ in APIClient() }
 
       Factory(UserService.self) { resolver in
-        UserService(api: resolver.get(APIClient.self))
+        let api: APIClient = resolver.get()
+        return UserService(api: api)
       }
     }
   }
@@ -55,6 +65,14 @@ Bolt.setup(modules: [NetworkModule()])
 
 let service: UserService = Bolt.inject()
 ```
+
+## Best Practices
+
+- Resolve dependencies at composition boundaries (app setup, feature assembly, coordinator entry points).
+- Prefer passing resolved dependencies into child types via initializers rather than resolving deep in leaf objects.
+- Use `withOverrides` for lexical test/customization scopes only.
+- Add explicit `dependencies: [Key(...)]` metadata for registrations where you want validator missing/cycle checks.
+- Keep runtime lookup ergonomic by relying on inferred `resolver.get()` where context provides type information.
 
 ### Named and parameterized registrations
 
@@ -111,3 +129,9 @@ container.register {
 ```
 
 Without metadata, validator still reports duplicate and type-mismatch issues.
+
+## References and Inspiration
+
+- [WhoopDI](https://github.com/WhoopInc/WhoopDI)
+- [swift-dependencies](https://github.com/pointfreeco/swift-dependencies)
+- [Factory](https://github.com/hmlongco/Factory)

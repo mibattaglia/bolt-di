@@ -1,3 +1,6 @@
+<img width="256" height="256" alt="image" src="https://github.com/user-attachments/assets/9ddfe208-54e3-4e04-92eb-ee8206b757c3" />
+
+
 # Bolt
 
 Bolt is a fast, lightweight Swift dependency injection framework with:

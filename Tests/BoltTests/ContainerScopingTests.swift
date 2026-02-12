@@ -10,6 +10,9 @@ private final class ScopedBox {
     }
 }
 
+private final class UnrelatedBox {
+}
+
 @Suite("Container Task-Local Scoping")
 struct ContainerTaskLocalScopingSuite {
     @Test func withContainerAppliesWithinLexicalScope() {
@@ -181,6 +184,28 @@ struct ContainerScopedOverridesSuite {
 
             let restored: String = Bolt.inject()
             #expect(restored == "base")
+        }
+    }
+
+    @Test func nonOverriddenSingletonUsesBaseCacheInsideOverrideScopes() {
+        let container = Container()
+        container.register {
+            Singleton(UnrelatedBox.self) { _ in UnrelatedBox() }
+            Factory(String.self) { _ in "base" }
+        }
+
+        Bolt.withContainer(container) {
+            let base: UnrelatedBox = Bolt.inject()
+
+            Bolt.withOverrides {
+                Factory(String.self) { _ in "override" }
+            } _: {
+                let scoped: UnrelatedBox = Bolt.inject()
+                #expect(scoped === base)
+            }
+
+            let after: UnrelatedBox = Bolt.inject()
+            #expect(after === base)
         }
     }
 }

@@ -24,7 +24,13 @@ swift run -c release BoltBenchmarks --filter singleton
   - `bolt_factory_resolve_with_params`
   - `bolt_singleton_cold_resolve`
   - `bolt_singleton_warm_resolve`
-  - `bolt_with_overrides_scope`
+  - `bolt_with_overrides_scope_entry_depth_1`
+  - `bolt_with_overrides_scope_entry_depth_3`
+  - `bolt_with_overrides_scope_entry_depth_10`
+  - `bolt_with_overrides_resolve_depth_1`
+  - `bolt_with_overrides_resolve_depth_3`
+  - `bolt_with_overrides_resolve_depth_10`
+  - `bolt_with_overrides_scope_entry_contention`
 - WhoopDI:
   - `whoopdi_factory_resolve_leaf`
   - `whoopdi_factory_resolve_root`
@@ -48,4 +54,16 @@ Run the JSON command at least 5 times on the same machine/session class, and com
 - `bolt_factory_resolve_with_params`
 - `bolt_singleton_warm_resolve`
 - `bolt_singleton_cold_resolve`
-- `bolt_with_overrides_scope`
+- `bolt_with_overrides_scope_entry_depth_1`
+- `bolt_with_overrides_scope_entry_depth_3`
+- `bolt_with_overrides_scope_entry_depth_10`
+- `bolt_with_overrides_resolve_depth_1`
+- `bolt_with_overrides_resolve_depth_3`
+- `bolt_with_overrides_resolve_depth_10`
+- `bolt_with_overrides_scope_entry_contention`
+
+## Override benchmark interpretation (Phase 3)
+- `scope_entry_*`: measures lexical override push/pop overhead without dependency resolution.
+- `resolve_*`: measures override overhead when resolving a rooted dependency graph within the active scope.
+- `*_depth_N`: nested override layers at depth `N` (1, 3, 10).
+- `scope_entry_contention`: concurrent tasks entering independent override scopes.

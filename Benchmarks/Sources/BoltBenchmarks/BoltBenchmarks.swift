@@ -1,5 +1,6 @@
 import Benchmark
 import Bolt
+import Foundation
 
 private final class BoltLeaf {}
 private final class BoltMid {
@@ -43,6 +44,27 @@ private func makeSingletonContainer() -> Container {
     return container
 }
 
+private func runNestedOverrides(depth: Int, resolve: Bool, container: Container) {
+    Bolt.withContainer(container) {
+        runOverrideLevel(current: 0, maxDepth: depth, resolve: resolve)
+    }
+}
+
+private func runOverrideLevel(current: Int, maxDepth: Int, resolve: Bool) {
+    guard current < maxDepth else {
+        if resolve {
+            _ = Bolt.inject(BoltRoot.self)
+        }
+        return
+    }
+
+    Bolt.withOverrides {
+        Factory(BoltLeaf.self) { _ in BoltLeaf() }
+    } _: {
+        runOverrideLevel(current: current + 1, maxDepth: maxDepth, resolve: resolve)
+    }
+}
+
 func registerBoltBenchmarks() {
     let boltFactoryContainer = makeFactoryContainer()
     let boltFactoryWithParamsContainer = makeFactoryWithParamsContainer()
@@ -70,13 +92,42 @@ func registerBoltBenchmarks() {
         _ = boltSingletonContainer.get(BoltLeaf.self)
     }
 
-    benchmark("bolt_with_overrides_scope") {
-        Bolt.withContainer(boltFactoryContainer) {
-            Bolt.withOverrides {
-                Factory(BoltLeaf.self) { _ in BoltLeaf() }
-            } _: {
-                _ = Bolt.inject(BoltRoot.self)
+    benchmark("bolt_with_overrides_scope_entry_depth_1") {
+        runNestedOverrides(depth: 1, resolve: false, container: boltFactoryContainer)
+    }
+
+    benchmark("bolt_with_overrides_scope_entry_depth_3") {
+        runNestedOverrides(depth: 3, resolve: false, container: boltFactoryContainer)
+    }
+
+    benchmark("bolt_with_overrides_scope_entry_depth_10") {
+        runNestedOverrides(depth: 10, resolve: false, container: boltFactoryContainer)
+    }
+
+    benchmark("bolt_with_overrides_resolve_depth_1") {
+        runNestedOverrides(depth: 1, resolve: true, container: boltFactoryContainer)
+    }
+
+    benchmark("bolt_with_overrides_resolve_depth_3") {
+        runNestedOverrides(depth: 3, resolve: true, container: boltFactoryContainer)
+    }
+
+    benchmark("bolt_with_overrides_resolve_depth_10") {
+        runNestedOverrides(depth: 10, resolve: true, container: boltFactoryContainer)
+    }
+
+    benchmark("bolt_with_overrides_scope_entry_contention") {
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "bolt.overrides.contention", attributes: .concurrent)
+
+        for _ in 0..<4 {
+            group.enter()
+            queue.async {
+                runNestedOverrides(depth: 1, resolve: false, container: boltFactoryContainer)
+                group.leave()
             }
         }
+
+        group.wait()
     }
 }

@@ -14,22 +14,22 @@ Verify a `DependencyModule` graph is structurally valid before runtime use.
 ## Create a module
 ```swift
 final class PaymentsModule: DependencyModule {
-  override var dependentModules: [DependencyModule] {
-    [NetworkModule(), AuthModule()]
-  }
+  @ModuleBuilder
+  override var body: ModuleDefinition {
+    DependentModules {
+      NetworkModule()
+      AuthModule()
+    }
 
-  override func defineDependencies(into container: Container) {
-    container.register {
-      Singleton(PaymentsAPI.self) { _ in LivePaymentsAPI() }
-      Factory(PaymentsService.self) { resolver in
-        PaymentsService(
-          api: resolver.get(PaymentsAPI.self),
-          auth: resolver.get(AuthService.self)
-        )
-      }
-      FactoryWithParams(ReceiptFormatter.self) { _, locale in
-        ReceiptFormatter(locale: locale)
-      }
+    Singleton(PaymentsAPI.self) { _ in LivePaymentsAPI() }
+    Factory(PaymentsService.self) { resolver in
+      PaymentsService(
+        api: resolver.get(PaymentsAPI.self),
+        auth: resolver.get(AuthService.self)
+      )
+    }
+    FactoryWithParams(ReceiptFormatter.self) { _, locale in
+      ReceiptFormatter(locale: locale)
     }
   }
 }
@@ -53,6 +53,6 @@ BoltValidator.validate(module: FeatureModule()) { error in
 - Registration type mismatches.
 
 ## Notes
-- `dependentModules` are included transitively.
+- Dependencies declared in `DependentModules { ... }` are included transitively.
 - This is non-crashing diagnostics; runtime `inject/get` remains crash-on-failure.
 - Register module(s) at app start via `Bolt.setup(modules: [...])`.

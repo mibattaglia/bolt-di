@@ -14,18 +14,19 @@ Ship behavior changes with clear tests and matching docs.
 ## Quick start
 1. Add/adjust tests in `Tests/BoltTests` for intended behavior.
 2. Implement minimal source change in `Sources/Bolt`.
-3. Run `swift test`.
+3. Run `xcrun swift test`.
 4. Update `README.md` when public usage changes.
 
 ## Test priorities
-- Scoping semantics (`withContainer`, `withOverrides`, async behavior).
+- Scoping semantics (`withModules`, `withContainer`, `withOverrides`, async behavior).
+- Global setup behavior (`Bolt.setup`) only in explicit serialized smoke coverage.
 - Module ordering and dependency graph behavior.
 - Validation behavior and error kinds.
 - Concurrency behavior for singleton and factory resolution.
 
 ## Command
 ```bash
-swift test
+xcrun swift test
 ```
 
 ## Done criteria

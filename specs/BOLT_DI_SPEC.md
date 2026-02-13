@@ -12,7 +12,7 @@ Date: 2026-02-11
 - [x] Phase 7: Full test suite and packaging finish
 
 Phase 7 validation note:
-- `swift package clean && swift test` completed successfully.
+- `swift package clean && xcrun swift test` completed successfully.
 - `pod lib lint` could not be executed in this environment because CocoaPods CLI (`pod`) is not installed.
 
 ## References
@@ -45,7 +45,7 @@ Phase 7 validation note:
 - **Parameterized registration**: A registration whose factory consumes runtime arguments during resolution.
 - **Dependency descriptor**: Public error-facing identifier (`typeName` + optional `name`) used in validation output.
 
-## Public API Surface (Proposed)
+## Public API Surface
 
 ### Core Types
 ```swift
@@ -87,10 +87,15 @@ public enum Bolt {
     public static func inject<T, P>(_ type: T.Type = T.self, named: String? = nil, params: P) -> T
 
     public static func withContainer<R>(_ container: Container, _ body: () throws -> R) rethrows -> R
+    public static func withContainer<R>(_ container: Container, _ body: () async throws -> R) async rethrows -> R
     public static func withOverrides<R>(
         @DependencyBuilder _ overrides: () -> [Registration],
         _ body: () throws -> R
     ) rethrows -> R
+    public static func withOverrides<R>(
+        @DependencyBuilder _ overrides: () -> [Registration],
+        _ body: () async throws -> R
+    ) async rethrows -> R
 }
 ```
 
@@ -118,7 +123,6 @@ public final class Container: Resolver {
 open class DependencyModule {
     public init() {}
 
-    @ModuleBuilder
     open var body: ModuleDefinition { get }
 }
 ```
@@ -140,7 +144,6 @@ public enum DependencyBuilder {
     public static func buildExpression<T>(_ expression: Factory<T>) -> Registration
     public static func buildExpression<T>(_ expression: Singleton<T>) -> Registration
     public static func buildExpression<P, T>(_ expression: FactoryWithParams<P, T>) -> Registration
-    public static func buildExpression<P, T>(_ expression: SingletonWithParams<P, T>) -> Registration
 }
 
 public struct Registration {
@@ -168,15 +171,6 @@ public struct Singleton<T> {
 }
 
 public struct FactoryWithParams<P, T> {
-    public init(
-        _ type: T.Type = T.self,
-        named: String? = nil,
-        _ factory: @escaping (Resolver, P) -> T
-    )
-    var registration: Registration { get }
-}
-
-public struct SingletonWithParams<P, T> {
     public init(
         _ type: T.Type = T.self,
         named: String? = nil,
@@ -224,7 +218,7 @@ public struct ValidationError: Error {
 - Key uses `ObjectIdentifier(T.self)` for O(1) lookup and zero reflection.
 - `name` is optional and string-based.
 - Parameterized and non-parameterized registrations share the same key model.
-- A key may have only one registration definition (mixing `Factory`, `Singleton`, `FactoryWithParams`, and `SingletonWithParams` for the same key is invalid).
+- A key may have only one registration definition (mixing `Factory`, `Singleton`, and `FactoryWithParams` for the same key is invalid).
 
 ### 2) Registration Rules
 - `register { ... }` adds registrations to the base registry.
@@ -255,15 +249,14 @@ Owner rules:
 - Override registration singleton cache lives in that override layer.
 - Popping an override layer destroys that layer's singleton cache.
 - This prevents test override singletons from leaking after `withOverrides`.
-Parameterized singleton rules:
-- `SingletonWithParams` initializes once on first resolution and then returns the cached instance.
-- Subsequent calls with different `params` values still return the same cached instance.
-- Teams should use `FactoryWithParams` when parameters are expected to produce different instances.
+Parameterized registration rules:
+- Parameterized entries are represented by `FactoryWithParams`.
 
 ### 5) Module Setup
 - `Bolt.setup(modules:)` creates a new container, applies modules in order, and assigns `Bolt.shared`.
 - Modules may resolve previously registered dependencies during setup.
 - Ordering is explicit and deterministic.
+- In debug builds, overlapping `Bolt.setup(modules:)` calls fail fast with an actionable message to use `Bolt.withModules`.
 - `Bolt.withModules` builds the same planned module graph but scopes it lexically/task-locally via `withContainer`.
 - `Bolt.withModules` does not mutate `Bolt.shared` and is the recommended test setup path.
 
@@ -324,7 +317,7 @@ Confirm validator catches duplicate registrations, missing dependencies, and cyc
 - Concurrency stress:
 Resolve singletons/factories from concurrent tasks and assert no races and no duplicate singleton initialization.
 - Parameterized resolution:
-Verify `FactoryWithParams` resolves correctly for multiple parameter values, and `SingletonWithParams` initializes once then reuses.
+Verify `FactoryWithParams` resolves correctly for multiple parameter values.
 
 ### B) Client Testing Ergonomics
 - Encourage test-local graphs/containers rather than mutating shared global state.

@@ -8,13 +8,13 @@ This is a standalone Swift package so Bolt library consumers do not pull benchma
 ## Run
 ```bash
 cd Benchmarks
-swift run -c release BoltBenchmarks --format json --quiet
+xcrun swift run -c release BoltBenchmarks --format json --quiet
 ```
 
 ## Filter
 ```bash
 cd Benchmarks
-swift run -c release BoltBenchmarks --filter singleton
+xcrun swift run -c release BoltBenchmarks --filter singleton
 ```
 
 ## Current benchmark set

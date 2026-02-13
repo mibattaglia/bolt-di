@@ -21,7 +21,6 @@ Choose the right scope API and avoid cross-task leakage.
 ## Module registration example
 ```swift
 final class AppModule: DependencyModule {
-  @ModuleBuilder
   override var body: ModuleDefinition {
     Singleton(APIClient.self) { _ in LiveAPIClient() }
     Factory(UserService.self) { resolver in

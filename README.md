@@ -132,6 +132,7 @@ Notes:
 - Overrides are lexical and task-local: they are automatically restored when the closure exits.
 - In tests, prefer `withModules` or `withContainer` over mutating global state with `Bolt.setup`.
 - Treat `Bolt.setup` as app bootstrap API, not per-test setup API.
+- In debug builds, concurrent `Bolt.setup(modules:)` calls fail fast with guidance to use `withModules`.
 
 ### Named and parameterized registrations
 
@@ -183,6 +184,21 @@ BoltValidator.validate(module: NetworkModule()) { error in
   print(error.message)
 }
 ```
+
+## Testing And Coverage
+
+```bash
+# Run tests
+xcrun swift test
+
+# Run tests with code coverage
+xcrun swift test --enable-code-coverage
+```
+
+Coverage artifacts are written under:
+
+- `.build/arm64-apple-macosx/debug/codecov/default.profdata`
+- `.build/arm64-apple-macosx/debug/codecov/Bolt.json`
 
 ## Benchmark Tiers
 

@@ -14,7 +14,6 @@ Verify a `DependencyModule` graph is structurally valid before runtime use.
 ## Create a module
 ```swift
 final class PaymentsModule: DependencyModule {
-  @ModuleBuilder
   override var body: ModuleDefinition {
     DependentModules {
       NetworkModule()

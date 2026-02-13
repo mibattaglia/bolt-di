@@ -42,6 +42,7 @@ await Bolt.withModules([AppModule(), TestOverridesModule()]) {
 
 ## Rules
 - `setup` is app bootstrap/global state. Avoid using it as per-test setup.
+- In debug builds, concurrent `setup` calls fail fast and point to `withModules`.
 - `withModules` builds the same planned module graph but scopes it lexically/task-locally.
 - `withContainer` replaces the entire graph in lexical/task-local scope.
 - `withOverrides` patches `Container.current` only in lexical/task-local scope.

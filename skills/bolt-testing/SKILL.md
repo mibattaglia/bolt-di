@@ -14,8 +14,8 @@ Ship behavior changes with clear tests and matching docs.
 ## Quick start
 1. Add/adjust tests in `Tests/BoltTests` for intended behavior.
 2. Implement minimal source change in `Sources/Bolt`.
-3. Run `xcrun swift test`.
-4. Update `README.md` when public usage changes.
+3. Run tests using the command that matches the environment.
+4. Update `README.md` and `specs/BOLT_DI_SPEC.md` when public usage changes.
 
 ## Test priorities
 - Scoping semantics (`withModules`, `withContainer`, `withOverrides`, async behavior).
@@ -26,7 +26,11 @@ Ship behavior changes with clear tests and matching docs.
 
 ## Command
 ```bash
+# SPM-capable environments
 xcrun swift test
+
+# iOS-only / Xcode-only environments
+xcodebuild test -scheme <SchemeName> <destination arguments>
 ```
 
 ## Done criteria

@@ -4,8 +4,7 @@ public enum Bolt {
     private static let sharedLock = NSLock()
     nonisolated(unsafe) private static var sharedStorage = Container()
 #if DEBUG
-    private static let setupGuardLock = NSLock()
-    nonisolated(unsafe) private static var activeSetupCalls = 0
+    private static let setupConcurrencyGuard = SetupConcurrencyGuard()
 #endif
 
     public static var shared: Container {
@@ -14,8 +13,13 @@ public enum Bolt {
 
     public static func setup(modules: [DependencyModule]) {
 #if DEBUG
-        beginSetupScopeOrFail()
-        defer { endSetupScope() }
+        let setupGuardState = setupConcurrencyGuard.begin()
+        if setupGuardState == .overlap {
+            fatalError(
+                "Bolt: Concurrent Bolt.setup(modules:) calls detected during debug/testing. Use Bolt.withModules(_:_: ) to isolate test graphs."
+            )
+        }
+        defer { setupConcurrencyGuard.end() }
 #endif
         let container = buildContainer(from: modules)
         sharedLock.withLock {
@@ -95,25 +99,4 @@ public enum Bolt {
 
         return container
     }
-
-#if DEBUG
-    private static func beginSetupScopeOrFail() {
-        let isConcurrent = setupGuardLock.withLock {
-            activeSetupCalls += 1
-            return activeSetupCalls > 1
-        }
-
-        if isConcurrent {
-            fatalError(
-                "Bolt: Concurrent Bolt.setup(modules:) calls detected during debug/testing. Use Bolt.withModules(_:_: ) to isolate test graphs."
-            )
-        }
-    }
-
-    private static func endSetupScope() {
-        setupGuardLock.withLock {
-            activeSetupCalls -= 1
-        }
-    }
-#endif
 }

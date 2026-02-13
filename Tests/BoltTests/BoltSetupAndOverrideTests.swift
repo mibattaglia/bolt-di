@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import Bolt
@@ -41,6 +42,21 @@ private final class ScopedStringModule: DependencyModule {
     @ModuleBuilder
     override var body: ModuleDefinition {
         Factory(String.self) { _ in self.value }
+    }
+}
+
+private final class GuardFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    func set(_ value: Bool) {
+        self.lock.withLock {
+            self.value = value
+        }
+    }
+
+    func get() -> Bool {
+        self.lock.withLock { self.value }
     }
 }
 
@@ -173,5 +189,69 @@ struct BoltGlobalSetupSmokeSuite {
 
         let value: OrderedValue = Bolt.inject()
         #expect(value.value == "A")
+    }
+}
+
+@Suite("Bolt Setup Concurrency Guard")
+struct BoltSetupConcurrencyGuardSuite {
+    @Test func beginReturnsProceedForSingleCaller() {
+        let guardrail = SetupConcurrencyGuard()
+        let first = guardrail.begin()
+        #expect(first == .proceed)
+        guardrail.end()
+    }
+
+    @Test func beginReturnsOverlapWhenAnotherCallIsActive() async {
+        let guardrail = SetupConcurrencyGuard()
+        let firstEntered = GuardFlag()
+        let firstCanExit = GuardFlag()
+        firstCanExit.set(false)
+
+        let states = await withTaskGroup(
+            of: SetupConcurrencyGuardState.self,
+            returning: [SetupConcurrencyGuardState].self
+        ) { group in
+            group.addTask {
+                let state = guardrail.begin()
+                firstEntered.set(true)
+                while !firstCanExit.get() {
+                    await Task.yield()
+                }
+                guardrail.end()
+                return state
+            }
+
+            group.addTask {
+                while !firstEntered.get() {
+                    await Task.yield()
+                }
+                let state = guardrail.begin()
+                guardrail.end()
+                firstCanExit.set(true)
+                return state
+            }
+
+            var collected: [SetupConcurrencyGuardState] = []
+            for await state in group {
+                collected.append(state)
+            }
+            return collected
+        }
+
+        #expect(states.count == 2)
+        #expect(states.contains(.proceed))
+        #expect(states.contains(.overlap))
+    }
+
+    @Test func beginCanProceedAgainAfterBalancedEnd() {
+        let guardrail = SetupConcurrencyGuard()
+
+        let first = guardrail.begin()
+        #expect(first == .proceed)
+        guardrail.end()
+
+        let second = guardrail.begin()
+        #expect(second == .proceed)
+        guardrail.end()
     }
 }

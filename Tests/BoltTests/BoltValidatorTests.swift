@@ -179,7 +179,7 @@ struct BoltValidatorSuite {
         #expect(errors.isEmpty)
     }
 
-    @Test func setupAndValidatorEvaluateEachVisitedBodyExactlyOnce() {
+    @Test func withModulesAndValidatorEvaluateEachVisitedBodyExactlyOnce() {
         let setupLeafCounter = PlannerEvaluationCounter()
         let setupRootCounter = PlannerEvaluationCounter()
         let sharedLeafForSetup = PlannerLeafModule(counter: setupLeafCounter)
@@ -194,7 +194,12 @@ struct BoltValidatorSuite {
             name: "setup-b"
         )
 
-        Bolt.setup(modules: [setupRootA, setupRootB])
+        Bolt.withModules([setupRootA, setupRootB]) {
+            let first: String = Bolt.inject(named: "setup-a")
+            let second: String = Bolt.inject(named: "setup-b")
+            #expect(first == "setup-a")
+            #expect(second == "setup-b")
+        }
         let setupLeafEvaluations = setupLeafCounter.count()
         let setupRootEvaluations = setupRootCounter.count()
 

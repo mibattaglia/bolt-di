@@ -3,29 +3,21 @@ import Foundation
 public enum Bolt {
     private static let sharedLock = NSLock()
     nonisolated(unsafe) private static var sharedStorage = Container()
+#if DEBUG
+    private static let setupGuardLock = NSLock()
+    nonisolated(unsafe) private static var activeSetupCalls = 0
+#endif
 
     public static var shared: Container {
         sharedLock.withLock { sharedStorage }
     }
 
     public static func setup(modules: [DependencyModule]) {
-        let container = Container()
-        let plan: ModulePlan
-        do {
-            plan = try DependencyModule.planGraph(from: modules)
-        } catch ModuleGraphError.cycle(let path) {
-            fatalError("Bolt: Circular module dependency detected: \(path.joined(separator: " -> ")).")
-        } catch {
-            fatalError("Bolt: Failed to resolve module dependencies.")
-        }
-
-        for module in plan.orderedModules {
-            let instanceID = ObjectIdentifier(module)
-            guard let definition = plan.definitionsByInstanceID[instanceID] else {
-                fatalError("Bolt: Internal error: missing module definition cache.")
-            }
-            container.register(definition.registrations)
-        }
+#if DEBUG
+        beginSetupScopeOrFail()
+        defer { endSetupScope() }
+#endif
+        let container = buildContainer(from: modules)
         sharedLock.withLock {
             sharedStorage = container
         }
@@ -51,6 +43,21 @@ public enum Bolt {
         }
     }
 
+    public static func withModules<R>(_ modules: [DependencyModule], _ body: () throws -> R) rethrows -> R {
+        let container = buildContainer(from: modules)
+        return try withContainer(container) {
+            try body()
+        }
+    }
+
+    public static func withModules<R>(_ modules: [DependencyModule], _ body: () async throws -> R) async rethrows -> R
+    {
+        let container = buildContainer(from: modules)
+        return try await withContainer(container) {
+            try await body()
+        }
+    }
+
     public static func withOverrides<R>(
         @DependencyBuilder _ overrides: () -> [Registration], _ body: () throws -> R
     ) rethrows -> R {
@@ -66,4 +73,47 @@ public enum Bolt {
             try await body()
         }
     }
+
+    private static func buildContainer(from modules: [DependencyModule]) -> Container {
+        let container = Container()
+        let plan: ModulePlan
+        do {
+            plan = try DependencyModule.planGraph(from: modules)
+        } catch ModuleGraphError.cycle(let path) {
+            fatalError("Bolt: Circular module dependency detected: \(path.joined(separator: " -> ")).")
+        } catch {
+            fatalError("Bolt: Failed to resolve module dependencies.")
+        }
+
+        for module in plan.orderedModules {
+            let instanceID = ObjectIdentifier(module)
+            guard let definition = plan.definitionsByInstanceID[instanceID] else {
+                fatalError("Bolt: Internal error: missing module definition cache.")
+            }
+            container.register(definition.registrations)
+        }
+
+        return container
+    }
+
+#if DEBUG
+    private static func beginSetupScopeOrFail() {
+        let isConcurrent = setupGuardLock.withLock {
+            activeSetupCalls += 1
+            return activeSetupCalls > 1
+        }
+
+        if isConcurrent {
+            fatalError(
+                "Bolt: Concurrent Bolt.setup(modules:) calls detected during debug/testing. Use Bolt.withModules(_:_: ) to isolate test graphs."
+            )
+        }
+    }
+
+    private static func endSetupScope() {
+        setupGuardLock.withLock {
+            activeSetupCalls -= 1
+        }
+    }
+#endif
 }

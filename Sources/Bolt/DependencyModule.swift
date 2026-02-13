@@ -88,8 +88,8 @@ public enum ModuleBuilder {
 open class DependencyModule {
     public init() {}
 
-    @ModuleBuilder
     open var body: ModuleDefinition {
+        ModuleDefinition()
     }
 }
 

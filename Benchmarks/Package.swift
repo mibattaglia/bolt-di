@@ -20,7 +20,7 @@ let package = Package(
     .executableTarget(
       name: "BoltBenchmarks",
       dependencies: [
-        .product(name: "Bolt", package: "swift-bolt"),
+        .product(name: "Bolt", package: "bolt-di"),
         .product(name: "Benchmark", package: "swift-benchmark"),
         .product(name: "WhoopDIKit", package: "WhoopDI"),
         .product(name: "Factory", package: "Factory"),

@@ -43,9 +43,13 @@ public struct BoltValidator {
     public init(modules: [DependencyModule]) {
         let container = Container(registrationBehavior: .collecting)
         do {
-            let orderedModules = try DependencyModule.orderedModules(from: modules)
-            for module in orderedModules {
-                module.defineDependencies(into: container)
+            let plan = try DependencyModule.planGraph(from: modules)
+            for module in plan.orderedModules {
+                let instanceID = ObjectIdentifier(module)
+                guard let definition = plan.definitionsByInstanceID[instanceID] else {
+                    fatalError("Bolt: Internal error: missing module definition cache.")
+                }
+                container.register(definition.registrations)
             }
         } catch ModuleGraphError.cycle(let path) {
             container.recordValidationError(

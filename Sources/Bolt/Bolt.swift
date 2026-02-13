@@ -10,17 +10,21 @@ public enum Bolt {
 
     public static func setup(modules: [DependencyModule]) {
         let container = Container()
-        let orderedModules: [DependencyModule]
+        let plan: ModulePlan
         do {
-            orderedModules = try DependencyModule.orderedModules(from: modules)
+            plan = try DependencyModule.planGraph(from: modules)
         } catch ModuleGraphError.cycle(let path) {
             fatalError("Bolt: Circular module dependency detected: \(path.joined(separator: " -> ")).")
         } catch {
             fatalError("Bolt: Failed to resolve module dependencies.")
         }
 
-        for module in orderedModules {
-            module.defineDependencies(into: container)
+        for module in plan.orderedModules {
+            let instanceID = ObjectIdentifier(module)
+            guard let definition = plan.definitionsByInstanceID[instanceID] else {
+                fatalError("Bolt: Internal error: missing module definition cache.")
+            }
+            container.register(definition.registrations)
         }
         sharedLock.withLock {
             sharedStorage = container

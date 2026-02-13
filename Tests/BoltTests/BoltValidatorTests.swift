@@ -1,28 +1,30 @@
+import Foundation
 import Testing
 
 @testable import Bolt
 
 private final class ValidatorDuplicateModuleA: DependencyModule {
-    override func defineDependencies(into container: Container) {
-        container.register {
-            Factory(String.self) { _ in "a" }
-        }
+    @ModuleBuilder
+    override var body: ModuleDefinition {
+        Factory(String.self) { _ in "a" }
     }
 }
 
 private final class ValidatorDuplicateModuleB: DependencyModule {
-    override func defineDependencies(into container: Container) {
-        container.register {
-            Factory(String.self) { _ in "b" }
-        }
+    @ModuleBuilder
+    override var body: ModuleDefinition {
+        Factory(String.self) { _ in "b" }
     }
 }
 
 private final class ModuleCycleRoot: DependencyModule {
     lazy var leaf = ModuleCycleLeaf(root: self)
 
-    override var dependentModules: [DependencyModule] {
-        [self.leaf]
+    @ModuleBuilder
+    override var body: ModuleDefinition {
+        DependentModules {
+            self.leaf
+        }
     }
 }
 
@@ -34,8 +36,65 @@ private final class ModuleCycleLeaf: DependencyModule {
         super.init()
     }
 
-    override var dependentModules: [DependencyModule] {
-        [self.root]
+    @ModuleBuilder
+    override var body: ModuleDefinition {
+        DependentModules {
+            self.root
+        }
+    }
+}
+
+private final class PlannerEvaluationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() {
+        self.lock.withLock {
+            self.value += 1
+        }
+    }
+
+    func count() -> Int {
+        self.lock.withLock { self.value }
+    }
+}
+
+private final class PlannerLeafModule: DependencyModule {
+    private let counter: PlannerEvaluationCounter
+
+    init(counter: PlannerEvaluationCounter) {
+        self.counter = counter
+        super.init()
+    }
+
+    override var body: ModuleDefinition {
+        self.counter.increment()
+        return ModuleDefinition(
+            registrations: [
+                Factory(Int.self) { _ in 1 }.registration
+            ]
+        )
+    }
+}
+
+private final class PlannerRootModule: DependencyModule {
+    let leaf: PlannerLeafModule
+    private let counter: PlannerEvaluationCounter
+    private let name: String
+
+    init(leaf: PlannerLeafModule, counter: PlannerEvaluationCounter, name: String) {
+        self.leaf = leaf
+        self.counter = counter
+        self.name = name
+        super.init()
+    }
+
+    override var body: ModuleDefinition {
+        self.counter.increment()
+        return ModuleDefinition(
+            dependentModules: [self.leaf],
+            registrations: [Factory(String.self, named: self.name) { _ in self.name }.registration]
+        )
     }
 }
 
@@ -118,5 +177,50 @@ struct BoltValidatorSuite {
         }
 
         #expect(errors.isEmpty)
+    }
+
+    @Test func setupAndValidatorEvaluateEachVisitedBodyExactlyOnce() {
+        let setupLeafCounter = PlannerEvaluationCounter()
+        let setupRootCounter = PlannerEvaluationCounter()
+        let sharedLeafForSetup = PlannerLeafModule(counter: setupLeafCounter)
+        let setupRootA = PlannerRootModule(
+            leaf: sharedLeafForSetup,
+            counter: setupRootCounter,
+            name: "setup-a"
+        )
+        let setupRootB = PlannerRootModule(
+            leaf: sharedLeafForSetup,
+            counter: setupRootCounter,
+            name: "setup-b"
+        )
+
+        Bolt.setup(modules: [setupRootA, setupRootB])
+        let setupLeafEvaluations = setupLeafCounter.count()
+        let setupRootEvaluations = setupRootCounter.count()
+
+        let validatorLeafCounter = PlannerEvaluationCounter()
+        let validatorRootCounter = PlannerEvaluationCounter()
+        let sharedLeafForValidator = PlannerLeafModule(counter: validatorLeafCounter)
+        let validatorRootA = PlannerRootModule(
+            leaf: sharedLeafForValidator,
+            counter: validatorRootCounter,
+            name: "validator-a"
+        )
+        let validatorRootB = PlannerRootModule(
+            leaf: sharedLeafForValidator,
+            counter: validatorRootCounter,
+            name: "validator-b"
+        )
+
+        _ = BoltValidator(modules: [validatorRootA, validatorRootB])
+        let validatorLeafEvaluations = validatorLeafCounter.count()
+        let validatorRootEvaluations = validatorRootCounter.count()
+
+        #expect(setupLeafEvaluations == 1)
+        #expect(setupRootEvaluations == 2)
+        #expect(validatorLeafEvaluations == 1)
+        #expect(validatorRootEvaluations == 2)
+        #expect(setupLeafEvaluations == validatorLeafEvaluations)
+        #expect(setupRootEvaluations == validatorRootEvaluations)
     }
 }

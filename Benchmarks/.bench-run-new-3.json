@@ -1,0 +1,154 @@
+{
+  "benchmarks": [
+    {
+      "name": "tier_a_bolt_factory_resolve_leaf",
+      "time": 167.0,
+      "std": 44.361067368381214,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_bolt_factory_resolve_root",
+      "time": 542.0,
+      "std": 24.501963387089972,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_b_bolt_factory_resolve_with_params",
+      "time": 208.0,
+      "std": 34.03641724604914,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_bolt_singleton_warm_resolve",
+      "time": 250.0,
+      "std": 26.92326346550847,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_b_bolt_singleton_cold_resolve",
+      "time": 250.0,
+      "std": 33.336565697632906,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_bolt_with_overrides_scope_entry_depth_1",
+      "time": 458.0,
+      "std": 22.12118394947048,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_b_bolt_with_overrides_scope_entry_depth_3",
+      "time": 1375.0,
+      "std": 24.570011531781823,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_b_bolt_with_overrides_scope_entry_depth_10",
+      "time": 4333.0,
+      "std": 8.375809097055713,
+      "iterations": 329998.0
+    },
+    {
+      "name": "tier_a_bolt_with_overrides_resolve_depth_1",
+      "time": 1208.0,
+      "std": 16.206185339251984,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_bolt_override_scope_comparable",
+      "time": 1125.0,
+      "std": 15.672256718356195,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_b_bolt_with_overrides_resolve_depth_3",
+      "time": 2083.0,
+      "std": 20.363892357213377,
+      "iterations": 692068.0
+    },
+    {
+      "name": "tier_b_bolt_with_overrides_resolve_depth_10",
+      "time": 5459.0,
+      "std": 8.695149942467701,
+      "iterations": 259058.0
+    },
+    {
+      "name": "tier_b_bolt_with_overrides_scope_entry_contention",
+      "time": 9250.0,
+      "std": 20.3886249449087,
+      "iterations": 146190.0
+    },
+    {
+      "name": "tier_a_whoopdi_factory_resolve_leaf",
+      "time": 209.0,
+      "std": 35.44775141652104,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_whoopdi_factory_resolve_root",
+      "time": 708.0,
+      "std": 19.728854547377246,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_whoopdi_singleton_warm_resolve",
+      "time": 334.0,
+      "std": 22.564243524933257,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_whoopdi_local_inject_scope",
+      "time": 1000.0,
+      "std": 30.14155110859229,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_factory_factory_resolve_leaf",
+      "time": 209.0,
+      "std": 36.965293249757906,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_factory_factory_resolve_root",
+      "time": 708.0,
+      "std": 17.446211210166044,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_factory_singleton_warm_resolve",
+      "time": 1042.0,
+      "std": 14.412979298268583,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_factory_override_scope",
+      "time": 1667.0,
+      "std": 11.42387591258472,
+      "iterations": 816116.0
+    },
+    {
+      "name": "tier_a_dependencies_factory_resolve_leaf",
+      "time": 417.0,
+      "std": 22.998268914745736,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_dependencies_factory_resolve_root",
+      "time": 1541.0,
+      "std": 12.465416038795873,
+      "iterations": 922257.0
+    },
+    {
+      "name": "tier_a_dependencies_singleton_warm_resolve",
+      "time": 875.0,
+      "std": 34.48888425158165,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_dependencies_override_scope",
+      "time": 1584.0,
+      "std": 11.381631144832227,
+      "iterations": 885899.0
+    }
+  ]
+}

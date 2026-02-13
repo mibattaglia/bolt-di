@@ -1,5 +1,6 @@
 import Benchmark
 import Factory
+import Foundation
 
 private final class FactoryLeaf {}
 private final class FactoryMid {
@@ -33,6 +34,28 @@ extension Container {
     }
 }
 
+private func runNestedFactoryOverrides(
+    container: Container,
+    depth: Int,
+    resolve: Bool
+) {
+    func run(level: Int) {
+        guard level < depth else {
+            if resolve {
+                _ = container.benchFactoryRoot()
+            }
+            return
+        }
+
+        container.manager.push()
+        defer { container.manager.pop() }
+        container.benchFactoryLeaf.register { FactoryLeaf() }
+        run(level: level + 1)
+    }
+
+    run(level: 0)
+}
+
 func registerFactoryBenchmarks() {
     let factoryContainer = Container.shared
     factoryContainer.benchFactoryLeaf.register { FactoryLeaf() }
@@ -58,5 +81,37 @@ func registerFactoryBenchmarks() {
         defer { factoryContainer.manager.pop() }
         factoryContainer.benchFactoryLeaf.register { FactoryLeaf() }
         _ = factoryContainer.benchFactoryRoot()
+    }
+
+    benchmark("tier_b_factory_override_scope_entry_depth_3") {
+        runNestedFactoryOverrides(
+            container: factoryContainer,
+            depth: 3,
+            resolve: false
+        )
+    }
+
+    benchmark("tier_b_factory_override_scope_entry_depth_10") {
+        runNestedFactoryOverrides(
+            container: factoryContainer,
+            depth: 10,
+            resolve: false
+        )
+    }
+
+    benchmark("tier_b_factory_override_scope_resolve_depth_3") {
+        runNestedFactoryOverrides(
+            container: factoryContainer,
+            depth: 3,
+            resolve: true
+        )
+    }
+
+    benchmark("tier_b_factory_override_scope_resolve_depth_10") {
+        runNestedFactoryOverrides(
+            container: factoryContainer,
+            depth: 10,
+            resolve: true
+        )
     }
 }

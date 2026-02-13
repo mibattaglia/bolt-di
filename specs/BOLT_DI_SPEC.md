@@ -109,8 +109,9 @@ public final class Container: Resolver {
 ```swift
 open class DependencyModule {
     public init() {}
-    open var dependentModules: [DependencyModule] { get }
-    open func defineDependencies(into container: Container)
+
+    @ModuleBuilder
+    open var body: ModuleDefinition { get }
 }
 ```
 
@@ -333,15 +334,13 @@ Verify `FactoryWithParams` resolves correctly for multiple parameter values, and
 ### 1) Basic module registration
 ```swift
 final class NetworkModule: DependencyModule {
-    override func defineDependencies(into container: Container) {
-        container.register {
-            Singleton { _ in
-                APIClient(baseURL: URL(string: "https://api.example.com")!)
-            }
+    override var body: ModuleDefinition {
+        Singleton { _ in
+            APIClient(baseURL: URL(string: "https://api.example.com")!)
+        }
 
-            Factory { resolver in
-                UserService(api: resolver.get(APIClient.self, named: nil))
-            }
+        Factory { resolver in
+            UserService(api: resolver.get(APIClient.self, named: nil))
         }
     }
 }
@@ -350,16 +349,14 @@ final class NetworkModule: DependencyModule {
 ### 2) DSL registration in a module
 ```swift
 final class AppModule: DependencyModule {
-    override func defineDependencies(into container: Container) {
-        container.register {
-            Singleton { _ in LiveAnalytics() }
+    override var body: ModuleDefinition {
+        Singleton { _ in LiveAnalytics() }
 
-            Factory { resolver in
-                AppCoordinator(
-                    analytics: resolver.get(AnalyticsService.self, named: nil),
-                    userService: resolver.get(UserService.self, named: nil)
-                )
-            }
+        Factory { resolver in
+            AppCoordinator(
+                analytics: resolver.get(AnalyticsService.self, named: nil),
+                userService: resolver.get(UserService.self, named: nil)
+            )
         }
     }
 }
@@ -368,15 +365,13 @@ final class AppModule: DependencyModule {
 ### 3) Named registrations
 ```swift
 final class APIFlavorModule: DependencyModule {
-    override func defineDependencies(into container: Container) {
-        container.register {
-            Singleton(named: "live") { _ in
-                APIClient(baseURL: URL(string: "https://api.example.com")!)
-            }
+    override var body: ModuleDefinition {
+        Singleton(named: "live") { _ in
+            APIClient(baseURL: URL(string: "https://api.example.com")!)
+        }
 
-            Singleton(named: "staging") { _ in
-                APIClient(baseURL: URL(string: "https://staging-api.example.com")!)
-            }
+        Singleton(named: "staging") { _ in
+            APIClient(baseURL: URL(string: "https://staging-api.example.com")!)
         }
     }
 }
@@ -421,22 +416,15 @@ func performPreviewRequest(token: String) -> UserService {
 ### 7) Parameterized registration + resolution
 ```swift
 final class SessionModule: DependencyModule {
-    override func defineDependencies(into container: Container) {
-        container.register {
-            FactoryWithParams(String.self, named: "greeting") { _, name in
-                "Hello, \(name)!"
-            }
-
-            SingletonWithParams(SessionClient.self) { _, config in
-                SessionClient(configuration: config)
-            }
+    override var body: ModuleDefinition {
+        FactoryWithParams(String.self, named: "greeting") { _, name in
+            "Hello, \(name)!"
         }
     }
 }
 
 Bolt.setup(modules: [SessionModule()])
 let greeting: String = Bolt.inject(named: "greeting", params: "Michael")
-let sessionClient: SessionClient = Bolt.inject(params: SessionConfiguration.production)
 ```
 
 ### 8) Client test with scoped overrides
@@ -444,7 +432,10 @@ let sessionClient: SessionClient = Bolt.inject(params: SessionConfiguration.prod
 @Test
 func userService_usesMockAPI() {
     let container = Container()
-    NetworkModule().defineDependencies(into: container)
+    container.register {
+        Singleton { _ in APIClient(baseURL: URL(string: "https://api.example.com")!) }
+        Factory { resolver in UserService(api: resolver.get(APIClient.self, named: nil)) }
+    }
 
     Bolt.withContainer(container) {
         Bolt.withOverrides {

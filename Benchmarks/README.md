@@ -45,6 +45,17 @@ swift run -c release BoltBenchmarks --filter singleton
   - `tier_b_bolt_with_overrides_resolve_depth_3`
   - `tier_b_bolt_with_overrides_resolve_depth_10`
   - `tier_b_bolt_with_overrides_scope_entry_contention`
+  - `tier_b_whoopdi_factory_resolve_with_params`
+  - `tier_b_whoopdi_local_inject_definition_heavy`
+  - `tier_b_factory_override_scope_entry_depth_3`
+  - `tier_b_factory_override_scope_entry_depth_10`
+  - `tier_b_factory_override_scope_resolve_depth_3`
+  - `tier_b_factory_override_scope_resolve_depth_10`
+  - `tier_b_dependencies_override_scope_entry_depth_3`
+  - `tier_b_dependencies_override_scope_entry_depth_10`
+  - `tier_b_dependencies_override_scope_resolve_depth_3`
+  - `tier_b_dependencies_override_scope_resolve_depth_10`
+  - `tier_b_dependencies_override_scope_entry_contention`
 
 ## Baseline capture (Phase 1)
 Run the JSON command at least 5 times on the same machine/session class, and compare medians for:
@@ -61,6 +72,17 @@ Run the JSON command at least 5 times on the same machine/session class, and com
 - `tier_b_bolt_with_overrides_resolve_depth_3`
 - `tier_b_bolt_with_overrides_resolve_depth_10`
 - `tier_b_bolt_with_overrides_scope_entry_contention`
+- `tier_b_whoopdi_factory_resolve_with_params`
+- `tier_b_whoopdi_local_inject_definition_heavy`
+- `tier_b_factory_override_scope_entry_depth_3`
+- `tier_b_factory_override_scope_entry_depth_10`
+- `tier_b_factory_override_scope_resolve_depth_3`
+- `tier_b_factory_override_scope_resolve_depth_10`
+- `tier_b_dependencies_override_scope_entry_depth_3`
+- `tier_b_dependencies_override_scope_entry_depth_10`
+- `tier_b_dependencies_override_scope_resolve_depth_3`
+- `tier_b_dependencies_override_scope_resolve_depth_10`
+- `tier_b_dependencies_override_scope_entry_contention`
 
 ## Override benchmark interpretation (Phase 3)
 - `scope_entry_*`: measures lexical override push/pop overhead without dependency resolution.

@@ -43,14 +43,12 @@ pod 'Bolt'
 
 ```swift
 final class NetworkModule: DependencyModule {
-  override func defineDependencies(into container: Container) {
-    container.register {
-      Singleton { _ in APIClient() }
+  override var body: ModuleDefinition {
+    Singleton { _ in APIClient() }
 
-      Factory { resolver in
-        let api: APIClient = resolver.get()
-        return UserService(api: api)
-      }
+    Factory { resolver in
+      let api: APIClient = resolver.get()
+      return UserService(api: api)
     }
   }
 }
@@ -64,7 +62,7 @@ let service: UserService = Bolt.inject()
 
 - Resolve dependencies at composition boundaries (app setup, feature assembly, coordinator entry points).
 - Prefer passing resolved dependencies into child types via initializers rather than resolving deep in leaf objects.
-- Use `DependencyModule.dependentModules` to declare transitive module requirements instead of manually duplicating setup lists.
+- Use `DependentModules { ... }` inside `DependencyModule.body` to declare transitive module requirements.
 - Use `withOverrides` for lexical test/customization scopes only.
 - Keep runtime lookup ergonomic by relying on inferred `resolver.get()` where context provides type information.
 
@@ -160,7 +158,7 @@ validator.validate { error in
 }
 ```
 
-Validate a single feature module (including its `dependentModules`) directly:
+Validate a single feature module (including its declared `DependentModules`) directly:
 
 ```swift
 BoltValidator.validate(module: NetworkModule()) { error in

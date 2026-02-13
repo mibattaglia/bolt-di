@@ -1,5 +1,6 @@
 import Benchmark
 import Dependencies
+import Foundation
 
 private struct DependenciesLeaf: Sendable {}
 private struct DependenciesMid: Sendable {
@@ -59,6 +60,29 @@ private struct DependenciesResolver {
     @Dependency(\.dependenciesSingletonLeaf) var singletonLeaf
 }
 
+private func runNestedDependenciesOverrides(
+    depth: Int,
+    resolve: Bool,
+    resolver: DependenciesResolver
+) {
+    func run(level: Int) {
+        guard level < depth else {
+            if resolve {
+                _ = resolver.makeRoot()
+            }
+            return
+        }
+
+        withDependencies {
+            $0.dependenciesLeafFactory = { DependenciesLeaf() }
+        } operation: {
+            run(level: level + 1)
+        }
+    }
+
+    run(level: 0)
+}
+
 func registerDependenciesBenchmarks() {
     let resolver = DependenciesResolver()
 
@@ -81,5 +105,36 @@ func registerDependenciesBenchmarks() {
         } operation: {
             _ = resolver.makeRoot()
         }
+    }
+
+    benchmark("tier_b_dependencies_override_scope_entry_depth_3") {
+        runNestedDependenciesOverrides(depth: 3, resolve: false, resolver: resolver)
+    }
+
+    benchmark("tier_b_dependencies_override_scope_entry_depth_10") {
+        runNestedDependenciesOverrides(depth: 10, resolve: false, resolver: resolver)
+    }
+
+    benchmark("tier_b_dependencies_override_scope_resolve_depth_3") {
+        runNestedDependenciesOverrides(depth: 3, resolve: true, resolver: resolver)
+    }
+
+    benchmark("tier_b_dependencies_override_scope_resolve_depth_10") {
+        runNestedDependenciesOverrides(depth: 10, resolve: true, resolver: resolver)
+    }
+
+    benchmark("tier_b_dependencies_override_scope_entry_contention") {
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "dependencies.overrides.contention", attributes: .concurrent)
+
+        for _ in 0..<4 {
+            group.enter()
+            queue.async {
+                runNestedDependenciesOverrides(depth: 1, resolve: false, resolver: resolver)
+                group.leave()
+            }
+        }
+
+        group.wait()
     }
 }

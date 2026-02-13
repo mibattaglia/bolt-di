@@ -11,23 +11,21 @@ private final class OrderedValue {
 }
 
 private final class OrderedModuleA: DependencyModule {
-    override func defineDependencies(into container: Container) {
-        container.register {
-            Factory(String.self) { _ in "A" }
-        }
+    @ModuleBuilder
+    override var body: ModuleDefinition {
+        Factory(String.self) { _ in "A" }
     }
 }
 
 private final class OrderedModuleB: DependencyModule {
-    override var dependentModules: [DependencyModule] {
-        [OrderedModuleA()]
-    }
+    @ModuleBuilder
+    override var body: ModuleDefinition {
+        DependentModules {
+            OrderedModuleA()
+        }
 
-    override func defineDependencies(into container: Container) {
-        container.register {
-            Factory(OrderedValue.self) { resolver in
-                OrderedValue(value: resolver.get(String.self))
-            }
+        Factory(OrderedValue.self) { resolver in
+            OrderedValue(value: resolver.get(String.self))
         }
     }
 }
@@ -40,10 +38,9 @@ private final class LabeledModule: DependencyModule {
         super.init()
     }
 
-    override func defineDependencies(into container: Container) {
-        container.register {
-            Factory(String.self, named: self.label) { _ in self.label }
-        }
+    @ModuleBuilder
+    override var body: ModuleDefinition {
+        Factory(String.self, named: self.label) { _ in self.label }
     }
 }
 

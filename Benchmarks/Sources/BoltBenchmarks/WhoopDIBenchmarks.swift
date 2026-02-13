@@ -17,6 +17,7 @@ private final class WhoopBenchmarkModule: DependencyModule {
         factory(name: "mid_factory") { try WhoopMid(leaf: self.get("leaf_factory")) }
         factory(name: "root_factory") { try WhoopRoot(mid: self.get("mid_factory")) }
         singleton(name: "leaf_singleton") { WhoopLeaf() }
+        factoryWithParams(name: "int_plus_one") { (value: Int) in value + 1 }
     }
 }
 
@@ -39,6 +40,19 @@ func registerWhoopDIBenchmarks() {
     benchmark("tier_a_whoopdi_local_inject_scope") {
         let _: WhoopRoot = WhoopDI.inject("root_factory") { module in
             module.factory(name: "leaf_factory") { WhoopLeaf() }
+        }
+    }
+
+    benchmark("tier_b_whoopdi_factory_resolve_with_params") {
+        let _: Int = WhoopDI.inject("int_plus_one", 41)
+    }
+
+    benchmark("tier_b_whoopdi_local_inject_definition_heavy") {
+        let _: WhoopRoot = WhoopDI.inject("root_factory") { module in
+            module.factory(name: "leaf_factory") { WhoopLeaf() }
+            for index in 0..<10 {
+                module.factory(name: "local_aux_\(index)") { index }
+            }
         }
     }
 }

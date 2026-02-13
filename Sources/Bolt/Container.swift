@@ -37,10 +37,13 @@ public final class Container: Resolver, @unchecked Sendable {
     }
 
     public func register(@DependencyBuilder _ registrations: () -> [Registration]) {
-        let values = registrations()
+        self.register(registrations())
+    }
+
+    func register(_ registrations: [Registration]) {
         self.lock.withLock {
             var updated = self.mutableRegistrations
-            for registration in values {
+            for registration in registrations {
                 if updated[registration.key] != nil {
                     self.handleDuplicateRegistration(for: registration.key)
                     continue

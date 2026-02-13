@@ -108,6 +108,16 @@ func registerBoltBenchmarks() {
         runNestedOverrides(depth: 1, resolve: true, container: boltFactoryContainer)
     }
 
+    benchmark("tier_a_bolt_override_scope_comparable") {
+        Bolt.withContainer(boltFactoryContainer) {
+            Bolt.withOverrides {
+                Factory(BoltLeaf.self) { _ in BoltLeaf() }
+            } _: {
+                _ = Bolt.inject(BoltRoot.self)
+            }
+        }
+    }
+
     benchmark("tier_b_bolt_with_overrides_resolve_depth_3") {
         runNestedOverrides(depth: 3, resolve: true, container: boltFactoryContainer)
     }

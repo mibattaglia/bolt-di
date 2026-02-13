@@ -155,6 +155,7 @@ Acceptance checks:
 - No regressions in parameterized registration behavior.
 
 ### 7) Precomputed Resolve Tables for Hot Keys
+- Status: Attempted on 2026-02-12, reverted (override-path regressions)
 Use precomputed key-to-entry lookup tables/snapshots for fastest-path key resolution.
 
 Reference inspiration:

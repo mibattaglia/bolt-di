@@ -335,11 +335,11 @@ Verify `FactoryWithParams` resolves correctly for multiple parameter values, and
 final class NetworkModule: DependencyModule {
     override func defineDependencies(into container: Container) {
         container.register {
-            Singleton(APIClient.self) { _ in
+            Singleton { _ in
                 APIClient(baseURL: URL(string: "https://api.example.com")!)
             }
 
-            Factory(UserService.self) { resolver in
+            Factory { resolver in
                 UserService(api: resolver.get(APIClient.self, named: nil))
             }
         }
@@ -352,9 +352,9 @@ final class NetworkModule: DependencyModule {
 final class AppModule: DependencyModule {
     override func defineDependencies(into container: Container) {
         container.register {
-            Singleton(AnalyticsService.self) { _ in LiveAnalytics() }
+            Singleton { _ in LiveAnalytics() }
 
-            Factory(AppCoordinator.self) { resolver in
+            Factory { resolver in
                 AppCoordinator(
                     analytics: resolver.get(AnalyticsService.self, named: nil),
                     userService: resolver.get(UserService.self, named: nil)
@@ -370,11 +370,11 @@ final class AppModule: DependencyModule {
 final class APIFlavorModule: DependencyModule {
     override func defineDependencies(into container: Container) {
         container.register {
-            Singleton(APIClient.self, named: "live") { _ in
+            Singleton(named: "live") { _ in
                 APIClient(baseURL: URL(string: "https://api.example.com")!)
             }
 
-            Singleton(APIClient.self, named: "staging") { _ in
+            Singleton(named: "staging") { _ in
                 APIClient(baseURL: URL(string: "https://staging-api.example.com")!)
             }
         }
@@ -411,7 +411,7 @@ final class FeatureViewModel {
 ```swift
 func performPreviewRequest(token: String) -> UserService {
     Bolt.withOverrides {
-        Factory(AuthToken.self) { _ in AuthToken(rawValue: token) }
+        Factory { _ in AuthToken(rawValue: token) }
     } {
         Bolt.inject(UserService.self)
     }
@@ -448,7 +448,7 @@ func userService_usesMockAPI() {
 
     Bolt.withContainer(container) {
         Bolt.withOverrides {
-            Singleton(APIClient.self) { _ in MockAPIClient() }
+            Singleton { _ in MockAPIClient() }
         } {
             let service = container.get(UserService.self)
             #expect(service.api is MockAPIClient)

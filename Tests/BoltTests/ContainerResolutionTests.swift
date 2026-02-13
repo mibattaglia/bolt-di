@@ -26,7 +26,7 @@ struct ContainerResolutionSuite {
     @Test func factoryReturnsNewInstanceEachResolve() {
         let container = Container()
         container.register {
-            Factory(APIClient.self) { _ in APIClient() }
+            Factory { _ in APIClient() }
         }
 
         let first = container.get(APIClient.self)
@@ -38,7 +38,7 @@ struct ContainerResolutionSuite {
     @Test func singletonReturnsSameInstanceEachResolve() {
         let container = Container()
         container.register {
-            Singleton(APIClient.self) { _ in APIClient() }
+            Singleton { _ in APIClient() }
         }
 
         let first = container.get(APIClient.self)
@@ -50,8 +50,8 @@ struct ContainerResolutionSuite {
     @Test func nestedResolutionUsesResolver() {
         let container = Container()
         container.register {
-            Singleton(APIClient.self) { _ in APIClient() }
-            Factory(UserService.self) { resolver in
+            Singleton { _ in APIClient() }
+            Factory { resolver in
                 UserService(api: resolver.get(APIClient.self))
             }
         }
@@ -65,11 +65,11 @@ struct ContainerResolutionSuite {
     @Test func factoryRootResolutionBuildsGraphEachTime() {
         let container = Container()
         container.register {
-            Factory(APIClient.self) { _ in APIClient() }
-            Factory(UserService.self) { resolver in
+            Factory { _ in APIClient() }
+            Factory { resolver in
                 UserService(api: resolver.get(APIClient.self))
             }
-            Factory(RootService.self) { resolver in
+            Factory { resolver in
                 RootService(userService: resolver.get(UserService.self))
             }
         }
@@ -122,7 +122,7 @@ struct ContainerScopeManagementSuite {
     @Test func resetScopesClearsSingletonCache() {
         let container = Container()
         container.register {
-            Singleton(APIClient.self) { _ in APIClient() }
+            Singleton { _ in APIClient() }
         }
 
         let first = container.get(APIClient.self)

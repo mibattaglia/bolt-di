@@ -45,9 +45,9 @@ pod 'Bolt'
 final class NetworkModule: DependencyModule {
   override func defineDependencies(into container: Container) {
     container.register {
-      Singleton(APIClient.self) { _ in APIClient() }
+      Singleton { _ in APIClient() }
 
-      Factory(UserService.self) { resolver in
+      Factory { resolver in
         let api: APIClient = resolver.get()
         return UserService(api: api)
       }
@@ -91,8 +91,8 @@ Bolt.setup(modules: [
 @Test func featureUsesMockGraph() {
   let testContainer = Container()
   testContainer.register {
-    Factory(APIClient.self) { _ in MockAPIClient() }
-    Factory(Analytics.self) { _ in NoopAnalytics() }
+    Factory { _ in MockAPIClient() }
+    Factory { _ in NoopAnalytics() }
   }
 
   Bolt.withContainer(testContainer) {
@@ -106,7 +106,7 @@ Bolt.setup(modules: [
 
 ```swift
 Bolt.withOverrides {
-  Factory(APIClient.self) { _ in MockAPIClient() }
+  Factory { _ in MockAPIClient() }
 } _: {
   let feature = FeatureViewModel()
   // Only APIClient is overridden. Other dependencies come from the base container.
@@ -121,7 +121,7 @@ Notes:
 
 ```swift
 container.register {
-  Singleton(APIClient.self, named: "live") { _ in APIClient.live }
+  Singleton(named: "live") { _ in APIClient.live }
   FactoryWithParams(String.self, named: "greeting") { _, name in
     "Hello, \(name)"
   }
@@ -135,7 +135,7 @@ let greeting: String = Bolt.inject(named: "greeting", params: "Michael")
 
 ```swift
 Bolt.withOverrides {
-  Factory(APIClient.self) { _ in MockAPIClient() }
+  Factory { _ in MockAPIClient() }
 } _: {
   let service: UserService = Bolt.inject()
 }

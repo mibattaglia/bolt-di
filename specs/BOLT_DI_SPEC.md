@@ -73,6 +73,14 @@ public enum Bolt {
     public static var shared: Container { get }
 
     public static func setup(modules: [DependencyModule])
+    public static func withModules<R>(
+        _ modules: [DependencyModule],
+        _ body: () throws -> R
+    ) rethrows -> R
+    public static func withModules<R>(
+        _ modules: [DependencyModule],
+        _ body: () async throws -> R
+    ) async rethrows -> R
 
     // Convenience crash-on-failure API for app runtime ergonomics.
     public static func inject<T>(_ type: T.Type = T.self, named: String? = nil) -> T
@@ -256,6 +264,8 @@ Parameterized singleton rules:
 - `Bolt.setup(modules:)` creates a new container, applies modules in order, and assigns `Bolt.shared`.
 - Modules may resolve previously registered dependencies during setup.
 - Ordering is explicit and deterministic.
+- `Bolt.withModules` builds the same planned module graph but scopes it lexically/task-locally via `withContainer`.
+- `Bolt.withModules` does not mutate `Bolt.shared` and is the recommended test setup path.
 
 ### 6) Task-Local Container
 - `Container.current` uses `@TaskLocal`, defaulting to `Bolt.shared`.
@@ -317,11 +327,13 @@ Resolve singletons/factories from concurrent tasks and assert no races and no du
 Verify `FactoryWithParams` resolves correctly for multiple parameter values, and `SingletonWithParams` initializes once then reuses.
 
 ### B) Client Testing Ergonomics
-- Encourage test-local containers rather than mutating shared global state.
-- Use `withContainer` + `withOverrides` for per-test setup.
+- Encourage test-local graphs/containers rather than mutating shared global state.
+- Prefer `withModules` for per-test module-driven setup.
+- Use `withContainer` + `withOverrides` for per-test container-driven setup.
 - Use behavior-level assertions for resolved dependencies and run validator for graph diagnostics.
 - Add targeted tests for parameterized dependencies with representative parameter values.
 - Run `BoltValidator(modules:)` in a smoke test to catch graph regressions early.
+- Treat `Bolt.setup` as app bootstrap API. If used in tests for explicit global smoke coverage, serialize those tests.
 
 ## CocoaPods and SPM Packaging
 - Ship as Swift package target `Bolt`.

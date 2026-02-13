@@ -156,7 +156,9 @@ public final class Container: Resolver, @unchecked Sendable {
         context: ResolutionContext
     ) -> T {
         guard let singletonCell = registration.singletonCell else {
-            fatalError("Bolt: Internal error: singleton registration missing cache cell for \(Self.dependencyDescription(key)).")
+            fatalError(
+                "Bolt: Internal error: singleton registration missing cache cell for \(Self.dependencyDescription(key))."
+            )
         }
 
         if let cached = singletonCell.cachedValue {

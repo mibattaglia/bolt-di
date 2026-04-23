@@ -54,11 +54,37 @@ public enum Bolt {
         }
     }
 
+    public static func withModules<R>(
+        _ modules: [DependencyModule],
+        @DependencyBuilder overrides: () -> [Registration],
+        _ body: () throws -> R
+    ) rethrows -> R {
+        let container = buildContainer(from: modules)
+        return try withContainer(container) {
+            try withOverrides(overrides) {
+                try body()
+            }
+        }
+    }
+
     public static func withModules<R>(_ modules: [DependencyModule], _ body: () async throws -> R) async rethrows -> R
     {
         let container = buildContainer(from: modules)
         return try await withContainer(container) {
             try await body()
+        }
+    }
+
+    public static func withModules<R>(
+        _ modules: [DependencyModule],
+        @DependencyBuilder overrides: () -> [Registration],
+        _ body: () async throws -> R
+    ) async rethrows -> R {
+        let container = buildContainer(from: modules)
+        return try await withContainer(container) {
+            try await withOverrides(overrides) {
+                try await body()
+            }
         }
     }
 

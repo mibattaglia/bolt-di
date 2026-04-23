@@ -81,6 +81,16 @@ public enum Bolt {
     ) rethrows -> R
     public static func withModules<R>(
         _ modules: [DependencyModule],
+        @DependencyBuilder overrides: () -> [Registration],
+        _ body: () throws -> R
+    ) rethrows -> R
+    public static func withModules<R>(
+        _ modules: [DependencyModule],
+        _ body: () async throws -> R
+    ) async rethrows -> R
+    public static func withModules<R>(
+        _ modules: [DependencyModule],
+        @DependencyBuilder overrides: () -> [Registration],
         _ body: () async throws -> R
     ) async rethrows -> R
 
@@ -127,6 +137,21 @@ open class DependencyModule {
 
     open var serviceKey: ServiceKey { get }
     open var body: ModuleDefinition { get }
+
+    public func withTestGraph<R>(
+        _ body: () throws -> R
+    ) rethrows -> R
+    public func withTestGraph<R>(
+        @DependencyBuilder overrides: () -> [Registration],
+        _ body: () throws -> R
+    ) rethrows -> R
+    public func withTestGraph<R>(
+        _ body: () async throws -> R
+    ) async rethrows -> R
+    public func withTestGraph<R>(
+        @DependencyBuilder overrides: () -> [Registration],
+        _ body: () async throws -> R
+    ) async rethrows -> R
 }
 ```
 
@@ -136,6 +161,20 @@ open class DependencyModule {
 public struct Injected<T> {
     public init(_ type: T.Type = T.self, named: String? = nil)
     public var wrappedValue: T { get }
+}
+```
+
+### Swift Testing Support (Swift 6.2+)
+```swift
+extension Trait {
+    public static func boltDependencies(
+        @ModuleBuilder modules: @escaping @Sendable () -> [DependencyModule]
+    ) -> Self
+
+    public static func boltDependencies(
+        @ModuleBuilder modules: @escaping @Sendable () -> [DependencyModule],
+        @DependencyBuilder overrides: @escaping @Sendable () -> [Registration]
+    ) -> Self
 }
 ```
 
@@ -261,7 +300,9 @@ Parameterized registration rules:
 - Ordering is explicit and deterministic.
 - In debug builds, overlapping `Bolt.setup(modules:)` calls fail fast with an actionable message to use `Bolt.withModules`.
 - `Bolt.withModules` builds the same planned module graph but scopes it lexically/task-locally via `withContainer`.
-- Combine `Bolt.withModules` with nested `Bolt.withOverrides` when tests need a fresh graph plus a few overrides.
+- `Bolt.withModules(..., overrides:)` is sugar for entering a fresh graph and then applying `withOverrides` inside that graph.
+- `DependencyModule.withTestGraph(...)` is single-root graph sugar equivalent to `Bolt.withModules([module], overrides: ...)`.
+- `withTestGraph` roots a scoped graph at the module instance and includes transitive `dependentModules`; it is not a provenance-aware per-module override system.
 - `Bolt.withModules` does not mutate `Bolt.shared` and is the recommended test setup path.
 
 ### 6) Task-Local Container
@@ -325,13 +366,14 @@ Verify `FactoryWithParams` resolves correctly for multiple parameter values.
 
 ### B) Client Testing Ergonomics
 - Encourage test-local graphs/containers rather than mutating shared global state.
-- Prefer `Bolt.withModules([FeatureModule()])` for single-root feature module tests.
+- Prefer `FeatureModule().withTestGraph(...)` for single-root feature module tests.
 - Prefer `Bolt.withModules([...])` when graph shape should remain explicit at the call site.
-- Use nested `withModules` + `withOverrides`, or `withContainer` + `withOverrides`, for per-test overrides.
+- Prefer `Bolt.withModules(..., overrides:)` when tests need a fresh graph plus a few scoped overrides without nested closures.
+- Use `withContainer` + `withOverrides` for direct container-driven tests.
 - Use behavior-level assertions for resolved dependencies and run validator for graph diagnostics.
 - Add targeted tests for parameterized dependencies with representative parameter values.
 - Run `BoltValidator(modules:)` in a smoke test to catch graph regressions early.
-- Planned Swift Testing ergonomics can live in a separate `BoltTestSupport` product exposed through a versioned manifest overlay; see `specs/BOLT_TESTING_ERGONOMICS_PLAN.md`.
+- Swift Testing ergonomics live in the separate `BoltTestSupport` product exposed through the `Package@swift-6.2.swift` manifest overlay; see `specs/BOLT_TESTING_ERGONOMICS_PLAN.md`.
 - Treat `Bolt.setup` as app bootstrap API. If used in tests for explicit global smoke coverage, serialize those tests.
 
 ## CocoaPods and SPM Packaging
@@ -339,7 +381,7 @@ Verify `FactoryWithParams` resolves correctly for multiple parameter values.
 - Ship `Bolt.podspec` exposing same sources and module name.
 - No macros.
 - Minimum deployment targets: iOS 17, watchOS 10, macOS 15.
-- Planned testing ergonomics expansion may add a SwiftPM-only `BoltTestSupport` product via `Package@swift-6.2.swift`; see `specs/BOLT_TESTING_ERGONOMICS_PLAN.md`.
+- SwiftPM ships a test-target-only `BoltTestSupport` product via `Package@swift-6.2.swift`; see `specs/BOLT_TESTING_ERGONOMICS_PLAN.md`.
 
 ## Example Usage
 
@@ -443,18 +485,34 @@ let greeting: String = Bolt.inject(named: "greeting", params: "Michael")
 ```swift
 @Test
 func featureModule_usesMockAPI() {
-    Bolt.withModules([FeatureModule()]) {
-        Bolt.withOverrides {
+    Bolt.withModules(
+        [FeatureModule()],
+        overrides: {
             Singleton(APIClient.self) { _ in MockAPIClient() }
-        } _: {
-            let service: UserService = Bolt.inject()
-            #expect(service.api is MockAPIClient)
         }
+    ) {
+        let service: UserService = Bolt.inject()
+        #expect(service.api is MockAPIClient)
     }
 }
 ```
 
-### 9) Client test with scoped container overrides
+### 9) Single-root client test graph
+```swift
+@Test
+func featureModule_usesRootedTestGraph() {
+    FeatureModule().withTestGraph(
+        overrides: {
+            Singleton(APIClient.self) { _ in MockAPIClient() }
+        }
+    ) {
+        let service: UserService = Bolt.inject()
+        #expect(service.api is MockAPIClient)
+    }
+}
+```
+
+### 10) Client test with scoped container overrides
 ```swift
 @Test
 func userService_usesMockAPI() {
@@ -475,7 +533,33 @@ func userService_usesMockAPI() {
 }
 ```
 
-### 10) Graph validation test
+### 11) Swift Testing trait support
+```swift
+import Bolt
+import BoltTestSupport
+import Testing
+
+@Suite(
+    .boltDependencies(
+        modules: {
+            AppModule()
+            FeatureModule()
+        },
+        overrides: {
+            Singleton(APIClient.self) { _ in MockAPIClient() }
+        }
+    )
+)
+struct FeatureTests {
+    @Test
+    func feature_usesMockAPI() {
+        let service: UserService = Bolt.inject()
+        #expect(service.api is MockAPIClient)
+    }
+}
+```
+
+### 12) Graph validation test
 ```swift
 @Test
 func dependencyGraph_isValid() {

@@ -1,5 +1,9 @@
 @resultBuilder
 public enum DependencyBuilder {
+    public static func buildBlock() -> [Registration] {
+        []
+    }
+
     public static func buildBlock(_ components: Registration...) -> [Registration] {
         components
     }

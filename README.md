@@ -9,6 +9,8 @@ Bolt is a fast, lightweight Swift dependency injection framework with:
 - Factory and singleton scopes
 - Task-local container scoping (`withContainer`) and task-local lexical overrides (`withOverrides`)
 - Task-local module graph scoping (`withModules`) for isolated tests
+- Test-graph sugar (`withModules(..., overrides:)`, `DependencyModule.withTestGraph(...)`)
+- Swift Testing trait support via the `BoltTestSupport` product on Swift 6.2+
 - Validator tooling for duplicate/type-mismatch checks, module dependency cycle checks, and strict required-registration checks
 
 ## Installation
@@ -29,10 +31,19 @@ let package = Package(
       dependencies: [
         .product(name: "Bolt", package: "bolt-di")
       ]
+    ),
+    .testTarget(
+      name: "MyTargetTests",
+      dependencies: [
+        .product(name: "Bolt", package: "bolt-di"),
+        .product(name: "BoltTestSupport", package: "bolt-di")
+      ]
     )
   ]
 )
 ```
+
+`BoltTestSupport` is intended for test targets only and is exposed by the `Package@swift-6.2.swift` manifest overlay on Swift 6.2+ toolchains.
 
 ### CocoaPods
 
@@ -99,6 +110,8 @@ Use these patterns depending on what you need to change:
 
 - `Bolt.setup(modules:)`: Configure app-wide live dependencies in `Bolt.shared`.
 - `Bolt.withModules(...)`: Build and use an isolated module graph for a lexical/task-local scope (recommended for tests).
+- `Bolt.withModules(..., overrides:)`: Build an isolated module graph and apply scoped overrides in one call.
+- `DependencyModule.withTestGraph(...)`: Root a scoped test graph at a single module instance.
 - `Bolt.withContainer(...)`: Swap the entire dependency graph for a lexical scope.
 - `Bolt.withOverrides { ... }`: Patch selected registrations in the current container for a lexical/task-local scope.
 
@@ -119,6 +132,37 @@ Bolt.setup(modules: [
     TestNetworkModule(),
     TestAnalyticsModule()
   ]) {
+    let feature = FeatureViewModel()
+    // assertions...
+  }
+}
+```
+
+### Per-test isolated module graph with focused overrides
+
+```swift
+@Test func featureUsesMockAPI() {
+  Bolt.withModules(
+    [AppModule(), FeatureModule()],
+    overrides: {
+      Factory(APIClient.self) { _ in MockAPIClient() }
+    }
+  ) {
+    let feature = FeatureViewModel()
+    // assertions...
+  }
+}
+```
+
+### Single-root feature test graph
+
+```swift
+@Test func featureModuleUsesMockAPI() {
+  FeatureModule().withTestGraph(
+    overrides: {
+      Factory(APIClient.self) { _ in MockAPIClient() }
+    }
+  ) {
     let feature = FeatureViewModel()
     // assertions...
   }
@@ -156,7 +200,9 @@ Bolt.withOverrides {
 Notes:
 - `withOverrides` targets `Container.current`: inside `withContainer`, it overrides that container; otherwise it overrides `Bolt.shared`.
 - Overrides are lexical and task-local: they are automatically restored when the closure exits.
-- In tests, prefer `withModules` or `withContainer` over mutating global state with `Bolt.setup`.
+- `withModules(..., overrides:)` is sugar for `withModules { withOverrides { ... } }` and preserves the same scoped semantics.
+- `withTestGraph` roots a scoped graph at the module instance you call it on, including transitive `DependentModules`; it is not a provenance-aware "override only this module" mechanism.
+- In tests, prefer `withModules`, `withTestGraph`, or `withContainer` over mutating global state with `Bolt.setup`.
 - Treat `Bolt.setup` as app bootstrap API, not per-test setup API.
 - In debug builds, concurrent `Bolt.setup(modules:)` calls fail fast with guidance to use `withModules`.
 
@@ -191,6 +237,36 @@ final class FeatureViewModel {
   @Injected private var userService: UserService
 }
 ```
+
+## Swift Testing Traits
+
+On Swift 6.2+, `BoltTestSupport` provides a recursive Swift Testing trait that gives each test a fresh Bolt graph.
+
+```swift
+import Bolt
+import BoltTestSupport
+import Testing
+
+@Suite(
+  .boltDependencies(
+    modules: {
+      AppModule()
+      FeatureModule()
+    },
+    overrides: {
+      Factory(APIClient.self) { _ in MockAPIClient() }
+    }
+  )
+)
+struct FeatureTests {
+  @Test func featureUsesMockAPI() {
+    let feature = FeatureViewModel()
+    // assertions...
+  }
+}
+```
+
+Use this product in test targets only.
 
 ## Validation
 

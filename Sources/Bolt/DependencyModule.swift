@@ -26,6 +26,10 @@ public enum ModuleComponent {
 
 @resultBuilder
 public enum ModuleBuilder {
+    public static func buildBlock() -> [ModuleComponent] {
+        []
+    }
+
     public static func buildBlock(_ components: [ModuleComponent]...) -> [ModuleComponent] {
         components.flatMap { $0 }
     }
@@ -94,6 +98,36 @@ open class DependencyModule {
 
     open var body: ModuleDefinition {
         ModuleDefinition()
+    }
+
+    public func withTestGraph<R>(_ body: () throws -> R) rethrows -> R {
+        try Bolt.withModules([self]) {
+            try body()
+        }
+    }
+
+    public func withTestGraph<R>(
+        @DependencyBuilder overrides: () -> [Registration],
+        _ body: () throws -> R
+    ) rethrows -> R {
+        try Bolt.withModules([self], overrides: overrides) {
+            try body()
+        }
+    }
+
+    public func withTestGraph<R>(_ body: () async throws -> R) async rethrows -> R {
+        try await Bolt.withModules([self]) {
+            try await body()
+        }
+    }
+
+    public func withTestGraph<R>(
+        @DependencyBuilder overrides: () -> [Registration],
+        _ body: () async throws -> R
+    ) async rethrows -> R {
+        try await Bolt.withModules([self], overrides: overrides) {
+            try await body()
+        }
     }
 }
 

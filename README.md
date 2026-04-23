@@ -44,6 +44,7 @@ pod 'Bolt'
 
 ```swift
 final class NetworkModule: DependencyModule {
+  @ModuleBuilder
   override var body: ModuleDefinition {
     Singleton { _ in APIClient() }
 
@@ -65,7 +66,32 @@ let service: UserService = Bolt.inject()
 - Prefer passing resolved dependencies into child types via initializers rather than resolving deep in leaf objects.
 - Use `DependentModules { ... }` inside `DependencyModule.body` to declare transitive module requirements.
 - Use `withOverrides` for lexical test/customization scopes only.
+- Module planning uses WhoopDI-style `serviceKey` identity: the default is `ServiceKey(type(of: self))`, repeated modules with the same `serviceKey` are coalesced, and the first discovered module wins.
 - Keep runtime lookup ergonomic by relying on inferred `resolver.get()` where context provides type information.
+
+### Module identity
+
+Override `serviceKey` when the same concrete module type needs to participate more than once in a graph:
+
+```swift
+final class APIFlavorModule: DependencyModule {
+  let environment: String
+
+  init(environment: String) {
+    self.environment = environment
+    super.init()
+  }
+
+  override var serviceKey: ServiceKey {
+    ServiceKey(type(of: self), name: self.environment)
+  }
+
+  @ModuleBuilder
+  override var body: ModuleDefinition {
+    Singleton(String.self, named: self.environment) { _ in self.environment }
+  }
+}
+```
 
 ## Scoping Patterns
 

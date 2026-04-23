@@ -89,6 +89,11 @@ private final class PlannerRootModule: DependencyModule {
         super.init()
     }
 
+    override var serviceKey: ServiceKey {
+        // Distinct root names opt into distinct logical modules under serviceKey-based planning.
+        ServiceKey(type(of: self), name: self.name)
+    }
+
     override var body: ModuleDefinition {
         self.counter.increment()
         return ModuleDefinition(
@@ -119,7 +124,7 @@ struct BoltValidatorSuite {
         let container = Container()
         container.register {
             Registration(
-                key: Key(String.self),
+                key: ServiceKey(String.self),
                 scope: .factory,
                 factory: ErasedFactory(
                     outputType: Int.self,

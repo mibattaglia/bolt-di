@@ -1,10 +1,10 @@
 import Foundation
 
-public struct Key: Hashable, Sendable {
+public struct ServiceKey: Hashable, Sendable {
     public let typeID: ObjectIdentifier
     public let name: String?
 
-    public init<T>(_ type: T.Type, name: String? = nil) {
+    public init(_ type: Any.Type, name: String? = nil) {
         self.typeID = normalizedTypeIdentifier(for: type)
         self.name = name
     }

@@ -1,0 +1,220 @@
+{
+  "benchmarks": [
+    {
+      "name": "tier_a_bolt_factory_resolve_leaf",
+      "time": 250.0,
+      "std": 22.18165048347731,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_bolt_factory_resolve_root",
+      "time": 750.0,
+      "std": 14.759528924204377,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_b_bolt_factory_resolve_with_params",
+      "time": 292.0,
+      "std": 21.280998214941814,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_bolt_singleton_warm_resolve",
+      "time": 292.0,
+      "std": 21.573721890537826,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_b_bolt_singleton_cold_resolve",
+      "time": 334.0,
+      "std": 20.77057966559628,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_bolt_with_overrides_scope_entry_depth_1",
+      "time": 625.0,
+      "std": 16.887809575609154,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_b_bolt_with_overrides_scope_entry_depth_3",
+      "time": 2084.0,
+      "std": 12.836603862547037,
+      "iterations": 696285.0
+    },
+    {
+      "name": "tier_b_bolt_with_overrides_scope_entry_depth_10",
+      "time": 6459.0,
+      "std": 9.025033868470716,
+      "iterations": 212457.0
+    },
+    {
+      "name": "tier_a_bolt_with_overrides_resolve_depth_1",
+      "time": 1708.0,
+      "std": 281.55320883540537,
+      "iterations": 813052.0
+    },
+    {
+      "name": "tier_a_bolt_override_scope_comparable",
+      "time": 1666.0,
+      "std": 9.29473085317422,
+      "iterations": 817517.0
+    },
+    {
+      "name": "tier_b_bolt_with_overrides_resolve_depth_3",
+      "time": 2959.0,
+      "std": 20.919494341216527,
+      "iterations": 480272.0
+    },
+    {
+      "name": "tier_b_bolt_with_overrides_resolve_depth_10",
+      "time": 8042.0,
+      "std": 9.648635688098322,
+      "iterations": 167924.0
+    },
+    {
+      "name": "tier_b_bolt_with_overrides_scope_entry_contention",
+      "time": 11667.0,
+      "std": 57.972876528386166,
+      "iterations": 115093.0
+    },
+    {
+      "name": "tier_a_whoopdi_factory_resolve_leaf",
+      "time": 292.0,
+      "std": 19.736847434487625,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_whoopdi_factory_resolve_root",
+      "time": 917.0,
+      "std": 175.14344447694458,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_whoopdi_singleton_warm_resolve",
+      "time": 500.0,
+      "std": 71.8466152151307,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_whoopdi_local_inject_scope",
+      "time": 1333.0,
+      "std": 114.68548788287276,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_b_whoopdi_factory_resolve_with_params",
+      "time": 333.0,
+      "std": 22.809566228956523,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_b_whoopdi_local_inject_definition_heavy",
+      "time": 4458.0,
+      "std": 22.223502669107013,
+      "iterations": 309179.0
+    },
+    {
+      "name": "tier_a_factory_factory_resolve_leaf",
+      "time": 292.0,
+      "std": 195.4992988293745,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_factory_factory_resolve_root",
+      "time": 959.0,
+      "std": 198.33491912084597,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_factory_singleton_warm_resolve",
+      "time": 1417.0,
+      "std": 551.8478735672733,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_factory_override_scope",
+      "time": 1625.0,
+      "std": 49.10314949921267,
+      "iterations": 822274.0
+    },
+    {
+      "name": "tier_b_factory_override_scope_entry_depth_3",
+      "time": 2375.0,
+      "std": 16.494357088542902,
+      "iterations": 582718.0
+    },
+    {
+      "name": "tier_b_factory_override_scope_entry_depth_10",
+      "time": 10000.0,
+      "std": 11.88476737796832,
+      "iterations": 139681.0
+    },
+    {
+      "name": "tier_b_factory_override_scope_resolve_depth_3",
+      "time": 3333.0,
+      "std": 7.519268179383041,
+      "iterations": 417726.0
+    },
+    {
+      "name": "tier_b_factory_override_scope_resolve_depth_10",
+      "time": 11041.0,
+      "std": 5.892607711880597,
+      "iterations": 124987.0
+    },
+    {
+      "name": "tier_a_dependencies_factory_resolve_leaf",
+      "time": 625.0,
+      "std": 13.7245778673032,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_dependencies_factory_resolve_root",
+      "time": 2209.0,
+      "std": 8.714937321519793,
+      "iterations": 617061.0
+    },
+    {
+      "name": "tier_a_dependencies_singleton_warm_resolve",
+      "time": 1291.0,
+      "std": 10.321566016351357,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_a_dependencies_override_scope",
+      "time": 2458.0,
+      "std": 11.4752755876792,
+      "iterations": 562345.0
+    },
+    {
+      "name": "tier_b_dependencies_override_scope_entry_depth_3",
+      "time": 500.0,
+      "std": 22.600682607824567,
+      "iterations": 1000000.0
+    },
+    {
+      "name": "tier_b_dependencies_override_scope_entry_depth_10",
+      "time": 2042.0,
+      "std": 14.658523910837044,
+      "iterations": 700708.0
+    },
+    {
+      "name": "tier_b_dependencies_override_scope_resolve_depth_3",
+      "time": 2958.0,
+      "std": 8.370107656774387,
+      "iterations": 471886.0
+    },
+    {
+      "name": "tier_b_dependencies_override_scope_resolve_depth_10",
+      "time": 4334.0,
+      "std": 8.103724991875346,
+      "iterations": 318031.0
+    },
+    {
+      "name": "tier_b_dependencies_override_scope_entry_contention",
+      "time": 9959.0,
+      "std": 15.781082364699051,
+      "iterations": 134896.0
+    }
+  ]
+}

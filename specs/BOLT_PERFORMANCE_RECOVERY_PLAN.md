@@ -254,7 +254,7 @@ cp Benchmarks/.build/checkouts/Factory/Sources/Factory/Factory/{Key.swift,Contai
 ```
 
 Bolt target files:
-- `Sources/Bolt/Key.swift`
+- `Sources/Bolt/ServiceKey.swift`
 - `Sources/Bolt/Registration.swift`
 - `Sources/Bolt/Container.swift`
 

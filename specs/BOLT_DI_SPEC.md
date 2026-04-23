@@ -15,6 +15,9 @@ Phase 7 validation note:
 - `swift package clean && xcrun swift test` completed successfully.
 - `pod lib lint` could not be executed in this environment because CocoaPods CLI (`pod`) is not installed.
 
+Related design plan:
+- Testing ergonomics expansion: `specs/BOLT_TESTING_ERGONOMICS_PLAN.md`
+
 ## References
 - https://github.com/WhoopInc/WhoopDI
 - https://github.com/hmlongco/Factory
@@ -49,9 +52,8 @@ Phase 7 validation note:
 
 ### Core Types
 ```swift
-public struct Key: Hashable {
+public struct ServiceKey: Hashable {
     public let typeID: ObjectIdentifier
-    public let typeName: String
     public let name: String?
 }
 
@@ -123,6 +125,7 @@ public final class Container: Resolver {
 open class DependencyModule {
     public init() {}
 
+    open var serviceKey: ServiceKey { get }
     open var body: ModuleDefinition { get }
 }
 ```
@@ -148,7 +151,7 @@ public enum DependencyBuilder {
 
 public struct Registration {
     // Internal metadata; erased factory storage remains internal to keep API flexible.
-    let key: Key
+    let key: ServiceKey
     let scope: Scope
 }
 
@@ -211,14 +214,14 @@ public struct ValidationError: Error {
 }
 ```
 
-## Key Design Points
+## ServiceKey Design Points
 
 ### 1) Keying and Resolution
-- Dependency key = `(ObjectIdentifier(type), name: String?)`.
-- Key uses `ObjectIdentifier(T.self)` for O(1) lookup and zero reflection.
+- Dependency lookup uses `ServiceKey(type, name: String?)`.
+- `ServiceKey` uses normalized type identity for O(1) lookup and stable cross-module matching.
 - `name` is optional and string-based.
 - Parameterized and non-parameterized registrations share the same key model.
-- A key may have only one registration definition (mixing `Factory`, `Singleton`, and `FactoryWithParams` for the same key is invalid).
+- A service key may have only one registration definition (mixing `Factory`, `Singleton`, and `FactoryWithParams` for the same key is invalid).
 
 ### 2) Registration Rules
 - `register { ... }` adds registrations to the base registry.
@@ -258,6 +261,7 @@ Parameterized registration rules:
 - Ordering is explicit and deterministic.
 - In debug builds, overlapping `Bolt.setup(modules:)` calls fail fast with an actionable message to use `Bolt.withModules`.
 - `Bolt.withModules` builds the same planned module graph but scopes it lexically/task-locally via `withContainer`.
+- Combine `Bolt.withModules` with nested `Bolt.withOverrides` when tests need a fresh graph plus a few overrides.
 - `Bolt.withModules` does not mutate `Bolt.shared` and is the recommended test setup path.
 
 ### 6) Task-Local Container
@@ -321,11 +325,13 @@ Verify `FactoryWithParams` resolves correctly for multiple parameter values.
 
 ### B) Client Testing Ergonomics
 - Encourage test-local graphs/containers rather than mutating shared global state.
-- Prefer `withModules` for per-test module-driven setup.
-- Use `withContainer` + `withOverrides` for per-test container-driven setup.
+- Prefer `Bolt.withModules([FeatureModule()])` for single-root feature module tests.
+- Prefer `Bolt.withModules([...])` when graph shape should remain explicit at the call site.
+- Use nested `withModules` + `withOverrides`, or `withContainer` + `withOverrides`, for per-test overrides.
 - Use behavior-level assertions for resolved dependencies and run validator for graph diagnostics.
 - Add targeted tests for parameterized dependencies with representative parameter values.
 - Run `BoltValidator(modules:)` in a smoke test to catch graph regressions early.
+- Planned Swift Testing ergonomics can live in a separate `BoltTestSupport` product exposed through a versioned manifest overlay; see `specs/BOLT_TESTING_ERGONOMICS_PLAN.md`.
 - Treat `Bolt.setup` as app bootstrap API. If used in tests for explicit global smoke coverage, serialize those tests.
 
 ## CocoaPods and SPM Packaging
@@ -333,6 +339,7 @@ Verify `FactoryWithParams` resolves correctly for multiple parameter values.
 - Ship `Bolt.podspec` exposing same sources and module name.
 - No macros.
 - Minimum deployment targets: iOS 17, watchOS 10, macOS 15.
+- Planned testing ergonomics expansion may add a SwiftPM-only `BoltTestSupport` product via `Package@swift-6.2.swift`; see `specs/BOLT_TESTING_ERGONOMICS_PLAN.md`.
 
 ## Example Usage
 
@@ -432,7 +439,22 @@ Bolt.setup(modules: [SessionModule()])
 let greeting: String = Bolt.inject(named: "greeting", params: "Michael")
 ```
 
-### 8) Client test with scoped overrides
+### 8) Client test with scoped module graph and overrides
+```swift
+@Test
+func featureModule_usesMockAPI() {
+    Bolt.withModules([FeatureModule()]) {
+        Bolt.withOverrides {
+            Singleton(APIClient.self) { _ in MockAPIClient() }
+        } _: {
+            let service: UserService = Bolt.inject()
+            #expect(service.api is MockAPIClient)
+        }
+    }
+}
+```
+
+### 9) Client test with scoped container overrides
 ```swift
 @Test
 func userService_usesMockAPI() {
@@ -453,7 +475,7 @@ func userService_usesMockAPI() {
 }
 ```
 
-### 9) Graph validation test
+### 10) Graph validation test
 ```swift
 @Test
 func dependencyGraph_isValid() {

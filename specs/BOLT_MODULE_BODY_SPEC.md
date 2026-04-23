@@ -125,13 +125,13 @@ This keeps one builder while enforcing that dependency groups contain only modul
 
 ### Setup pipeline integration
 `Bolt.setup(modules:)` integration steps:
-1. Read `module.body` once per visited module instance.
+1. Read `module.body` once per unique module `serviceKey`.
 2. Use `body.dependentModules` to traverse/DFS the graph.
-3. Preserve existing cycle detection and deterministic ordering guarantees.
+3. Preserve deterministic ordering guarantees while detecting cycles by logical module identity.
 4. After ordering, register `body.registrations` for each ordered module into the target container.
 
 Implementation note:
-- During `orderedModules(from:)`, cache each module instance's computed `ModuleDefinition` in a local dictionary keyed by `ObjectIdentifier(module)` to avoid recomputing `body` multiple times.
+- During `planGraph(from:)`, cache each unique module's computed `ModuleDefinition` in a local dictionary keyed by `serviceKey` to avoid recomputing `body` multiple times.
 - Reuse that cache during registration to avoid duplicate builder work.
 
 ### Concrete call flow and ownership
@@ -148,23 +148,23 @@ This section defines exactly who calls what and when.
 - Owner: `DependencyModule` graph utility
 - Output: `ModulePlan` containing:
   - `orderedModules: [DependencyModule]`
-  - `definitionsByInstanceID: [ObjectIdentifier: ModuleDefinition]`
+  - `definitionsByServiceKey: [ServiceKey: ModuleDefinition]`
 
 `planGraph` responsibilities:
 - DFS roots in lexical order.
-- For each visited module instance:
+- For each unique module `serviceKey`:
   - evaluate `module.body` once
-  - store `ModuleDefinition` in `definitionsByInstanceID`
+  - store `ModuleDefinition` in `definitionsByServiceKey`
   - read `definition.dependentModules` for traversal edges
-- detect cycles using the current type-stack mechanism
-- preserve distinct instance semantics (no silent dedup beyond already-visited instance IDs)
+- detect cycles using the active `serviceKey` stack
+- coalesce repeated modules with the same `serviceKey`, keeping the first discovered module
 
 #### 3) Registration phase
 - Caller: `Bolt.setup`
-- Inputs: `ModulePlan.orderedModules`, `ModulePlan.definitionsByInstanceID`
+- Inputs: `ModulePlan.orderedModules`, `ModulePlan.definitionsByServiceKey`
 - Owner: `Bolt.setup` orchestration
 - For each module in `orderedModules`:
-  - lookup `definition = definitionsByInstanceID[ObjectIdentifier(module)]`
+  - lookup `definition = definitionsByServiceKey[module.serviceKey]`
   - call `container.register { ... }` with `definition.registrations`
 
 Note:
@@ -196,7 +196,7 @@ Exact data transformations:
 
 4. Graph planning:
 - `[DependencyModule roots] + ModuleDefinition.dependentModules` edges
-  -> `ModulePlan(orderedModules, definitionsByInstanceID)`
+  -> `ModulePlan(orderedModules, definitionsByServiceKey)`
 
 5. Registration handoff:
 - `ModuleDefinition.registrations`
@@ -211,7 +211,7 @@ Non-public integration surface:
 ```swift
 struct ModulePlan {
     let orderedModules: [DependencyModule]
-    let definitionsByInstanceID: [ObjectIdentifier: ModuleDefinition]
+    let definitionsByServiceKey: [ServiceKey: ModuleDefinition]
 }
 
 extension DependencyModule {
@@ -227,8 +227,7 @@ public static func setup(modules: [DependencyModule]) {
     let plan = try DependencyModule.planGraph(from: modules)
 
     for module in plan.orderedModules {
-        let id = ObjectIdentifier(module)
-        guard let definition = plan.definitionsByInstanceID[id] else {
+        guard let definition = plan.definitionsByServiceKey[module.serviceKey] else {
             fatalError("Bolt: Internal error: missing module definition cache.")
         }
         container.register(definition.registrations)
@@ -333,9 +332,9 @@ Required adaptation:
 
 ### Determinism and graph rules
 - Traversal order is deterministic based on lexical order of root input and `DependentModules` declarations.
-- Distinct module instances are preserved as distinct graph nodes.
-- Distinct instances must not be silently dropped.
-- Cycles are detected and reported as fatal setup errors (same as today).
+- Modules are coalesced by `serviceKey`; the first discovered module for a given `serviceKey` wins.
+- Same concrete module types can still participate more than once by overriding `serviceKey`.
+- Cycles are detected and reported as fatal setup errors using logical module identity.
 
 ### Duplicate registration behavior
 Unchanged from current strict semantics:
@@ -388,7 +387,7 @@ final class NetworkModule: DependencyModule {
 - Add tests for:
   - mixed `DependentModules` + registrations in one body
   - deterministic ordering for sibling modules
-  - distinct-instance preservation
+  - default `serviceKey` coalescing and distinct `serviceKey` participation
   - cycle detection through `body`
   - invalid control-flow usage is rejected at compile time
 
@@ -449,13 +448,13 @@ Target file:
 Steps:
 1. Introduce internal `ModulePlan`:
    - `orderedModules: [DependencyModule]`
-   - `definitionsByInstanceID: [ObjectIdentifier: ModuleDefinition]`
+   - `definitionsByServiceKey: [ServiceKey: ModuleDefinition]`
 2. Replace/adapt `orderedModules(from:)` into `planGraph(from:)`.
-3. Implement DFS with existing semantics:
+3. Implement DFS with `serviceKey` semantics:
    - deterministic order
-   - cycle detection by module type stack
-   - visited set by module instance
-4. Evaluate `module.body` exactly once per visited instance and cache it.
+   - cycle detection by active `serviceKey` stack
+   - visited set by `serviceKey`
+4. Evaluate `module.body` exactly once per unique `serviceKey` and cache it.
 5. Traverse edges using `definition.dependentModules`.
 
 Completion criteria:
@@ -520,7 +519,7 @@ Target files:
 
 Required test coverage:
 1. Setup and validator produce identical module ordering for same roots.
-2. Distinct module instances remain distinct graph nodes.
+2. Modules coalesce by default `serviceKey`, while distinct overridden `serviceKey`s remain distinct graph nodes.
 3. Cycles detected through `body` dependencies.
 4. `DependentModules { ... }` rejects registrations (runtime trap/unit crash test as appropriate).
 5. Registration ordering is deterministic and lexical.

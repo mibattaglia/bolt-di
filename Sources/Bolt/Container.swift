@@ -8,7 +8,7 @@ public final class Container: Resolver, @unchecked Sendable {
     }
 
     private let lock = NSLock()
-    private var mutableRegistrations: [Key: Registration] = [:]
+    private var mutableRegistrations: [ServiceKey: Registration] = [:]
     nonisolated(unsafe) private var registrationSnapshot = RegistrationSnapshot(entries: [:])
 
     private let registrationBehavior: RegistrationBehavior
@@ -28,7 +28,7 @@ public final class Container: Resolver, @unchecked Sendable {
     private init(
         parent: Container,
         registrationBehavior: RegistrationBehavior,
-        registrations: [Key: Registration]
+        registrations: [ServiceKey: Registration]
     ) {
         self.parent = parent
         self.registrationBehavior = registrationBehavior
@@ -82,7 +82,7 @@ public final class Container: Resolver, @unchecked Sendable {
     fileprivate func resolve<T>(
         _ type: T.Type, named: String?, params: Any?, context: ResolutionContext
     ) -> T {
-        let key = Key(type, name: named)
+        let key = ServiceKey(type, name: named)
         guard let registration = self.lookupRegistration(for: key) else {
             fatalError(Self.missingRegistrationMessage(for: key))
         }
@@ -129,11 +129,11 @@ public final class Container: Resolver, @unchecked Sendable {
 
     private func resolveFactoryNoParameters<T>(
         _ type: T.Type,
-        key: Key,
+        key: ServiceKey,
         registration: Registration,
         context: ResolutionContext
     ) -> T {
-        self.pushResolutionKeyOrFail(key: key, context: context)
+        self.pushResolutionServiceKeyOrFail(key: key, context: context)
         defer { context.stack.removeLast() }
         let resolved = registration.factory.call(context, nil)
         return Self.castOrFail(resolved, expected: type, key: key)
@@ -141,12 +141,12 @@ public final class Container: Resolver, @unchecked Sendable {
 
     private func resolveFactoryWithParameters<T>(
         _ type: T.Type,
-        key: Key,
+        key: ServiceKey,
         registration: Registration,
         params: Any,
         context: ResolutionContext
     ) -> T {
-        self.pushResolutionKeyOrFail(key: key, context: context)
+        self.pushResolutionServiceKeyOrFail(key: key, context: context)
         defer { context.stack.removeLast() }
         let resolved = registration.factory.call(context, params)
         return Self.castOrFail(resolved, expected: type, key: key)
@@ -154,7 +154,7 @@ public final class Container: Resolver, @unchecked Sendable {
 
     private func resolveSingletonNoParameters<T>(
         _ type: T.Type,
-        key: Key,
+        key: ServiceKey,
         registration: Registration,
         context: ResolutionContext
     ) -> T {
@@ -168,7 +168,7 @@ public final class Container: Resolver, @unchecked Sendable {
             return Self.castOrFail(cached, expected: type, key: key)
         }
 
-        self.pushResolutionKeyOrFail(key: key, context: context)
+        self.pushResolutionServiceKeyOrFail(key: key, context: context)
         defer { context.stack.removeLast() }
 
         let resolved = singletonCell.getOrCreate {
@@ -178,8 +178,8 @@ public final class Container: Resolver, @unchecked Sendable {
     }
 
     @inline(__always)
-    private func pushResolutionKeyOrFail(
-        key: Key,
+    private func pushResolutionServiceKeyOrFail(
+        key: ServiceKey,
         context: ResolutionContext
     ) {
         if context.stack.contains(key) {
@@ -200,8 +200,8 @@ public final class Container: Resolver, @unchecked Sendable {
         }
     }
 
-    func effectiveRegistrationsForValidation() -> [Key: Registration] {
-        var registrations: [Key: Registration] = [:]
+    func effectiveRegistrationsForValidation() -> [ServiceKey: Registration] {
+        var registrations: [ServiceKey: Registration] = [:]
         var chain: [Container] = []
         var current: Container? = self
 
@@ -259,12 +259,12 @@ public final class Container: Resolver, @unchecked Sendable {
         }
     }
 
-    private func buildOverrideEntries(from overrides: [Registration]) -> [Key: Registration] {
-        var entries: [Key: Registration] = [:]
-        var overrideKeys = Set<Key>()
+    private func buildOverrideEntries(from overrides: [Registration]) -> [ServiceKey: Registration] {
+        var entries: [ServiceKey: Registration] = [:]
+        var overrideServiceKeys = Set<ServiceKey>()
 
         for registration in overrides {
-            if overrideKeys.contains(registration.key) {
+            if overrideServiceKeys.contains(registration.key) {
                 switch self.registrationBehavior {
                 case .strict:
                     fatalError(Self.duplicateRegistrationMessage(for: registration.key))
@@ -286,14 +286,14 @@ public final class Container: Resolver, @unchecked Sendable {
                 continue
             }
 
-            overrideKeys.insert(registration.key)
+            overrideServiceKeys.insert(registration.key)
             entries[registration.key] = registration
         }
 
         return entries
     }
 
-    private func lookupRegistration(for key: Key) -> Registration? {
+    private func lookupRegistration(for key: ServiceKey) -> Registration? {
         if let registration = self.registrationSnapshot.entries[key] {
             return registration
         }
@@ -301,41 +301,41 @@ public final class Container: Resolver, @unchecked Sendable {
     }
 
     @inline(__always)
-    private static func castOrFail<T>(_ value: Any, expected: T.Type, key: Key) -> T {
+    private static func castOrFail<T>(_ value: Any, expected: T.Type, key: ServiceKey) -> T {
         guard let typed = value as? T else {
             fatalError(typeMismatchMessage(for: key, expected: expected, actual: Swift.type(of: value)))
         }
         return typed
     }
 
-    private static func duplicateRegistrationMessage(for key: Key) -> String {
+    private static func duplicateRegistrationMessage(for key: ServiceKey) -> String {
         "Bolt: Duplicate registration for \(key.typeName) (name: \(nameDescription(key.name))). Use withOverrides { ... } to replace in scoped contexts."
     }
 
-    private static func missingRegistrationMessage(for key: Key) -> String {
+    private static func missingRegistrationMessage(for key: ServiceKey) -> String {
         "Bolt: Missing registration for \(key.typeName) (name: \(nameDescription(key.name)))."
     }
 
-    private static func circularDependencyMessage(for keys: [Key]) -> String {
+    private static func circularDependencyMessage(for keys: [ServiceKey]) -> String {
         let path = keys.map(dependencyDescription).joined(separator: " -> ")
         return "Bolt: Circular dependency detected: \(path)."
     }
 
-    private static func typeMismatchMessage(for key: Key, expected: Any.Type, actual: Any.Type)
+    private static func typeMismatchMessage(for key: ServiceKey, expected: Any.Type, actual: Any.Type)
         -> String
     {
         "Bolt: Type mismatch for \(dependencyDescription(key)). Expected \(String(reflecting: expected)), got \(String(reflecting: actual))."
     }
 
-    private static func missingParameterMessage(for key: Key, expected: Any.Type) -> String {
+    private static func missingParameterMessage(for key: ServiceKey, expected: Any.Type) -> String {
         "Bolt: Missing params for \(dependencyDescription(key)). Expected \(String(reflecting: expected))."
     }
 
-    private static func unexpectedParameterMessage(for key: Key) -> String {
+    private static func unexpectedParameterMessage(for key: ServiceKey) -> String {
         "Bolt: Unexpected params for \(dependencyDescription(key)). Registration is not parameterized."
     }
 
-    private static func dependencyDescription(_ key: Key) -> String {
+    private static func dependencyDescription(_ key: ServiceKey) -> String {
         "\(key.typeName) (name: \(nameDescription(key.name)))"
     }
 
@@ -344,7 +344,7 @@ public final class Container: Resolver, @unchecked Sendable {
         return "\"\(name)\""
     }
 
-    private func handleDuplicateRegistration(for key: Key) {
+    private func handleDuplicateRegistration(for key: ServiceKey) {
         switch self.registrationBehavior {
         case .strict:
             fatalError(Self.duplicateRegistrationMessage(for: key))
@@ -367,16 +367,16 @@ enum RegistrationBehavior {
 }
 
 private final class RegistrationSnapshot: @unchecked Sendable {
-    let entries: [Key: Registration]
+    let entries: [ServiceKey: Registration]
 
-    init(entries: [Key: Registration]) {
+    init(entries: [ServiceKey: Registration]) {
         self.entries = entries
     }
 }
 
 private final class ResolutionContext: Resolver {
     private unowned let container: Container
-    fileprivate var stack: [Key] = []
+    fileprivate var stack: [ServiceKey] = []
 
     init(container: Container) {
         self.container = container

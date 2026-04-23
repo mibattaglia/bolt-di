@@ -90,8 +90,7 @@ public enum Bolt {
         }
 
         for module in plan.orderedModules {
-            let instanceID = ObjectIdentifier(module)
-            guard let definition = plan.definitionsByInstanceID[instanceID] else {
+            guard let definition = plan.definitionsByServiceKey[module.serviceKey] else {
                 fatalError("Bolt: Internal error: missing module definition cache.")
             }
             container.register(definition.registrations)

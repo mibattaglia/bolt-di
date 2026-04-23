@@ -74,6 +74,154 @@ private final class LabeledModule: DependencyModule {
     }
 }
 
+private final class KeyedLabeledModule: DependencyModule {
+    let label: String
+
+    init(label: String) {
+        self.label = label
+        super.init()
+    }
+
+    override var serviceKey: ServiceKey {
+        ServiceKey(type(of: self), name: self.label)
+    }
+
+    @ModuleBuilder
+    override var body: ModuleDefinition {
+        Factory(String.self, named: self.label) { _ in self.label }
+    }
+}
+
+private final class SharedNetworkingModule: DependencyModule {
+    let source: String
+
+    init(source: String) {
+        self.source = source
+        super.init()
+    }
+
+    @ModuleBuilder
+    override var body: ModuleDefinition {
+        Singleton(String.self, named: "api-client-source") { _ in self.source }
+    }
+}
+
+private class BaseFeatureUsingSharedNetworkingModule: DependencyModule {
+    let featureName: String
+
+    init(featureName: String) {
+        self.featureName = featureName
+        super.init()
+    }
+
+    @ModuleBuilder
+    override var body: ModuleDefinition {
+        DependentModules {
+            SharedNetworkingModule(source: self.featureName)
+        }
+
+        Factory(String.self, named: self.featureName) { _ in self.featureName }
+    }
+}
+
+private final class FeatureUsingSharedNetworkingModuleA: BaseFeatureUsingSharedNetworkingModule {
+    init() {
+        super.init(featureName: "feature-a")
+    }
+}
+
+private final class FeatureUsingSharedNetworkingModuleB: BaseFeatureUsingSharedNetworkingModule {
+    init() {
+        super.init(featureName: "feature-b")
+    }
+}
+
+private final class KeyedSharedNetworkingModule: DependencyModule {
+    let source: String
+
+    init(source: String) {
+        self.source = source
+        super.init()
+    }
+
+    override var serviceKey: ServiceKey {
+        ServiceKey(type(of: self), name: self.source)
+    }
+
+    @ModuleBuilder
+    override var body: ModuleDefinition {
+        Singleton(String.self, named: self.source) { _ in self.source }
+    }
+}
+
+private class BaseFeatureUsingKeyedNetworkingModule: DependencyModule {
+    let featureName: String
+
+    init(featureName: String) {
+        self.featureName = featureName
+        super.init()
+    }
+
+    @ModuleBuilder
+    override var body: ModuleDefinition {
+        DependentModules {
+            KeyedSharedNetworkingModule(source: self.featureName)
+        }
+    }
+}
+
+private final class FeatureUsingKeyedNetworkingModuleA: BaseFeatureUsingKeyedNetworkingModule {
+    init() {
+        super.init(featureName: "feature-a")
+    }
+}
+
+private final class FeatureUsingKeyedNetworkingModuleB: BaseFeatureUsingKeyedNetworkingModule {
+    init() {
+        super.init(featureName: "feature-b")
+    }
+}
+
+private final class PlannerEvaluationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() {
+        self.lock.withLock {
+            self.value += 1
+        }
+    }
+
+    func count() -> Int {
+        self.lock.withLock { self.value }
+    }
+}
+
+private final class CountingModule: DependencyModule {
+    private let counter: PlannerEvaluationCounter
+    private let keyName: String?
+
+    init(counter: PlannerEvaluationCounter, keyName: String? = nil) {
+        self.counter = counter
+        self.keyName = keyName
+        super.init()
+    }
+
+    override var serviceKey: ServiceKey {
+        guard let keyName else { return super.serviceKey }
+        return ServiceKey(type(of: self), name: keyName)
+    }
+
+    override var body: ModuleDefinition {
+        self.counter.increment()
+        return ModuleDefinition(
+            registrations: [
+                Factory(Int.self, named: self.keyName) { _ in 1 }.registration
+            ]
+        )
+    }
+}
+
 @Suite("Bolt Setup And Overrides")
 struct BoltSetupAndOverridesSuite {
     @Test func withModulesAppliesModulesInOrderForDependentResolution() {
@@ -109,14 +257,86 @@ struct BoltSetupAndOverridesSuite {
         }
     }
 
-    @Test func withModulesRunsDistinctModuleInstancesEvenWhenTypesMatch() {
-        Bolt.withModules([LabeledModule(label: "A"), LabeledModule(label: "B")]) {
-            let first: String = Bolt.inject(named: "A")
-            let second: String = Bolt.inject(named: "B")
+    @Test func withModulesCoalescesDuplicateTopLevelModulesByDefaultServiceKey() throws {
+        let first = LabeledModule(label: "A")
+        let second = LabeledModule(label: "B")
 
-            #expect(first == "A")
-            #expect(second == "B")
+        let plan = try DependencyModule.planGraph(from: [first, second])
+        #expect(plan.orderedModules.count == 1)
+        #expect(plan.orderedModules.first === first)
+
+        Bolt.withModules([first, second]) {
+            let resolved: String = Bolt.inject(named: "A")
+            #expect(resolved == "A")
         }
+
+        let validator = BoltValidator(modules: [first, second])
+        var errors: [ValidationError] = []
+        validator.validate { error in
+            errors.append(error)
+        }
+        #expect(errors.isEmpty)
+    }
+
+    @Test func withModulesAllowsSameConcreteTypeMultipleTimesWhenServiceKeyDiffers() throws {
+        let first = KeyedLabeledModule(label: "A")
+        let second = KeyedLabeledModule(label: "B")
+
+        let plan = try DependencyModule.planGraph(from: [first, second])
+        #expect(plan.orderedModules.count == 2)
+
+        Bolt.withModules([first, second]) {
+            let a: String = Bolt.inject(named: "A")
+            let b: String = Bolt.inject(named: "B")
+
+            #expect(a == "A")
+            #expect(b == "B")
+        }
+    }
+
+    @Test func dependentModulesCoalesceByDefaultServiceKey() {
+        Bolt.withModules([
+            FeatureUsingSharedNetworkingModuleA(),
+            FeatureUsingSharedNetworkingModuleB(),
+        ]) {
+            // feature-a is discovered first, so its shared dependency wins for the default serviceKey.
+            let source: String = Bolt.inject(named: "api-client-source")
+            let featureA: String = Bolt.inject(named: "feature-a")
+            let featureB: String = Bolt.inject(named: "feature-b")
+
+            #expect(source == "feature-a")
+            #expect(featureA == "feature-a")
+            #expect(featureB == "feature-b")
+        }
+    }
+
+    @Test func dependentModulesAllowSameConcreteTypeWhenServiceKeyDiffers() {
+        Bolt.withModules([
+            FeatureUsingKeyedNetworkingModuleA(),
+            FeatureUsingKeyedNetworkingModuleB(),
+        ]) {
+            let a: String = Bolt.inject(named: "feature-a")
+            let b: String = Bolt.inject(named: "feature-b")
+
+            #expect(a == "feature-a")
+            #expect(b == "feature-b")
+        }
+    }
+
+    @Test func plannerEvaluatesOneBodyPerUniqueServiceKey() {
+        let sharedCounter = PlannerEvaluationCounter()
+        _ = BoltValidator(modules: [
+            CountingModule(counter: sharedCounter),
+            CountingModule(counter: sharedCounter),
+        ])
+        #expect(sharedCounter.count() == 1)
+
+        let distinctCounter = PlannerEvaluationCounter()
+        _ = BoltValidator(modules: [
+            CountingModule(counter: distinctCounter, keyName: "A"),
+            CountingModule(counter: distinctCounter, keyName: "B"),
+        ])
+        #expect(distinctCounter.count() == 2)
     }
 
     @Test func withModulesIsolatesConcurrentGraphs() async {

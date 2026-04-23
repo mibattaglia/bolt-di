@@ -88,6 +88,10 @@ public enum ModuleBuilder {
 open class DependencyModule {
     public init() {}
 
+    open var serviceKey: ServiceKey {
+        ServiceKey(type(of: self))
+    }
+
     open var body: ModuleDefinition {
         ModuleDefinition()
     }
@@ -99,7 +103,7 @@ enum ModuleGraphError: Error {
 
 struct ModulePlan {
     let orderedModules: [DependencyModule]
-    let definitionsByInstanceID: [ObjectIdentifier: ModuleDefinition]
+    let definitionsByServiceKey: [ServiceKey: ModuleDefinition]
 }
 
 extension DependencyModule {
@@ -108,36 +112,39 @@ extension DependencyModule {
     }
 
     static func planGraph(from roots: [DependencyModule]) throws -> ModulePlan {
-        var visitedInstances = Set<ObjectIdentifier>()
-        var stackTypeIDs: [ObjectIdentifier] = []
-        var stackTypeNames: [String] = []
+        var visitedServiceKeys = Set<ServiceKey>()
+        var stackServiceKeys: [ServiceKey] = []
+        var stackDescriptions: [String] = []
         var ordered: [DependencyModule] = []
-        var definitionsByInstanceID: [ObjectIdentifier: ModuleDefinition] = [:]
+        var definitionsByServiceKey: [ServiceKey: ModuleDefinition] = [:]
+
+        func description(for serviceKey: ServiceKey) -> String {
+            "\(serviceKey.typeName) (name: \(serviceKey.name.map { "\"\($0)\"" } ?? "nil"))"
+        }
 
         func visit(_ module: DependencyModule) throws {
-            let instanceID = ObjectIdentifier(module)
-            if visitedInstances.contains(instanceID) { return }
+            let serviceKey = module.serviceKey
+            if visitedServiceKeys.contains(serviceKey) { return }
 
-            let typeID = ObjectIdentifier(type(of: module))
-            let typeName = String(reflecting: type(of: module))
-            if let cycleStart = stackTypeIDs.lastIndex(of: typeID) {
-                let path = Array(stackTypeNames[cycleStart...]) + [typeName]
+            let moduleDescription = description(for: serviceKey)
+            if let cycleStart = stackServiceKeys.lastIndex(of: serviceKey) {
+                let path = Array(stackDescriptions[cycleStart...]) + [moduleDescription]
                 throw ModuleGraphError.cycle(path: path)
             }
 
-            stackTypeIDs.append(typeID)
-            stackTypeNames.append(typeName)
+            stackServiceKeys.append(serviceKey)
+            stackDescriptions.append(moduleDescription)
 
             let definition = module.body
-            definitionsByInstanceID[instanceID] = definition
+            definitionsByServiceKey[serviceKey] = definition
 
             for dependency in definition.dependentModules {
                 try visit(dependency)
             }
 
-            _ = stackTypeIDs.popLast()
-            _ = stackTypeNames.popLast()
-            visitedInstances.insert(instanceID)
+            _ = stackServiceKeys.popLast()
+            _ = stackDescriptions.popLast()
+            visitedServiceKeys.insert(serviceKey)
             ordered.append(module)
         }
 
@@ -147,7 +154,7 @@ extension DependencyModule {
 
         return ModulePlan(
             orderedModules: ordered,
-            definitionsByInstanceID: definitionsByInstanceID
+            definitionsByServiceKey: definitionsByServiceKey
         )
     }
 }

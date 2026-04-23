@@ -1,12 +1,12 @@
 import Foundation
 
 public struct Registration {
-    public let key: Key
+    public let key: ServiceKey
     let shape: RegistrationShape
     let factory: ErasedFactory
     let singletonCell: SingletonCell?
 
-    init(key: Key, scope: Scope, factory: ErasedFactory) {
+    init(key: ServiceKey, scope: Scope, factory: ErasedFactory) {
         self.key = key
         self.shape = RegistrationShape(scope: scope, hasParameters: factory.parameterType != nil)
         self.factory = factory
@@ -59,7 +59,7 @@ public struct Factory<T> {
 
     var registration: Registration {
         Registration(
-            key: Key(self.type, name: self.name),
+            key: ServiceKey(self.type, name: self.name),
             scope: .factory,
             factory: ErasedFactory(
                 outputType: T.self,
@@ -87,7 +87,7 @@ public struct Singleton<T> {
 
     var registration: Registration {
         Registration(
-            key: Key(self.type, name: self.name),
+            key: ServiceKey(self.type, name: self.name),
             scope: .singleton,
             factory: ErasedFactory(
                 outputType: T.self,
@@ -115,7 +115,7 @@ public struct FactoryWithParams<P, T> {
 
     var registration: Registration {
         Registration(
-            key: Key(self.type, name: self.name),
+            key: ServiceKey(self.type, name: self.name),
             scope: .factory,
             factory: ErasedFactory(
                 outputType: T.self,

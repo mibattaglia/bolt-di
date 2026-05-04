@@ -29,9 +29,9 @@ public struct ValidationError: Error, Sendable {
     }
 }
 
-public struct BoltValidator {
+public final class BoltValidator {
     private let container: Container
-    private let params = ValidationParamsStore()
+    private var params: [ServiceKey: Any] = [:]
 
     public static func validate(module: DependencyModule, _ onError: (ValidationError) -> Void) {
         BoltValidator(modules: [module]).validate(onError)
@@ -72,7 +72,7 @@ public struct BoltValidator {
     }
 
     public func addParams<T>(_ params: Any, for type: T.Type, named: String? = nil) {
-        self.params.set(params, for: ServiceKey(type, name: named))
+        self.params[ServiceKey(type, name: named)] = params
     }
 
     public func validate(_ onError: (ValidationError) -> Void) {
@@ -83,6 +83,7 @@ public struct BoltValidator {
             }
             return (lhs.key.name ?? "") < (rhs.key.name ?? "")
         }
+
         for error in self.container.collectedValidationErrors() {
             onError(error)
         }
@@ -93,22 +94,41 @@ public struct BoltValidator {
             }
         }
 
-        let dynamicErrors = ValidationErrorSink()
-        let paramsSnapshot = self.params.snapshot()
         for registration in orderedRegistrations {
-            let operation = ValidationOperation(
-                registrations: registrations,
-                params: paramsSnapshot,
-                root: registration,
-                errors: dynamicErrors
-            )
-            ValidationThread.run {
-                operation.run()
+            do {
+                try self.container.validate(
+                    registration: registration,
+                    params: try self.validationParams(for: registration)
+                )
+            } catch let error as ResolutionError {
+                onError(error.validationError)
+            } catch {
+                onError(
+                    ValidationError(
+                        kind: .typeMismatch,
+                        dependency: ValidationError.DependencyDescriptor(
+                            typeName: registration.key.typeName,
+                            name: registration.key.name
+                        ),
+                        message: "Bolt validation failed: Dependency factory for \(registration.key.typeName) threw error: \(error)."
+                    )
+                )
             }
         }
+    }
 
-        for error in dynamicErrors.errors() {
-            onError(error)
+    private func validationParams(for registration: Registration) throws -> Any? {
+        switch registration.shape {
+        case .factoryNoParameters, .singletonNoParameters:
+            return nil
+        case .factoryWithParameters:
+            guard let params = self.params[registration.key] else {
+                throw ResolutionError.missingParameter(
+                    registration.key,
+                    expected: registration.factory.parameterType!
+                )
+            }
+            return params
         }
     }
 
@@ -127,247 +147,5 @@ public struct BoltValidator {
             message:
                 "Bolt validation failed: Type mismatch for \(registration.key.typeName) (name: \(registration.key.name.map { "\"\($0)\"" } ?? "nil"))."
         )
-    }
-}
-
-private final class ValidationParamsStore: @unchecked Sendable {
-    private let lock = NSLock()
-    private var params: [ServiceKey: Any] = [:]
-
-    func set(_ params: Any, for key: ServiceKey) {
-        self.lock.withLock {
-            self.params[key] = params
-        }
-    }
-
-    func snapshot() -> [ServiceKey: Any] {
-        self.lock.withLock { self.params }
-    }
-}
-
-private final class ValidationErrorSink: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage: [ValidationError] = []
-
-    func append(_ error: ValidationError) {
-        self.lock.withLock {
-            self.storage.append(error)
-        }
-    }
-
-    func errors() -> [ValidationError] {
-        self.lock.withLock { self.storage }
-    }
-}
-
-private final class ValidationOperation: @unchecked Sendable {
-    private let registrations: [ServiceKey: Registration]
-    private let params: [ServiceKey: Any]
-    private let root: Registration
-    private let errors: ValidationErrorSink
-
-    init(
-        registrations: [ServiceKey: Registration],
-        params: [ServiceKey: Any],
-        root: Registration,
-        errors: ValidationErrorSink
-    ) {
-        self.registrations = registrations
-        self.params = params
-        self.root = root
-        self.errors = errors
-    }
-
-    func run() {
-        let resolver = ValidationResolver(
-            registrations: self.registrations,
-            params: self.params,
-            errors: self.errors
-        )
-        resolver.resolveRoot(self.root)
-    }
-}
-
-private final class ValidationResolver: Resolver {
-    private let registrations: [ServiceKey: Registration]
-    private let params: [ServiceKey: Any]
-    private let errors: ValidationErrorSink
-    private var stack: [ServiceKey] = []
-
-    init(
-        registrations: [ServiceKey: Registration],
-        params: [ServiceKey: Any],
-        errors: ValidationErrorSink
-    ) {
-        self.registrations = registrations
-        self.params = params
-        self.errors = errors
-    }
-
-    func resolveRoot(_ registration: Registration) {
-        let key = registration.key
-        let params = self.rootParams(for: registration)
-        self.resolveErased(key: key, registration: registration, params: params)
-    }
-
-    func get<T>(
-        _ type: T.Type,
-        named: String?,
-        isolation: isolated (any Actor)?
-    ) -> T {
-        self.resolve(type, named: named, params: nil)
-    }
-
-    func get<T, P>(
-        _ type: T.Type,
-        named: String?,
-        params: P,
-        isolation: isolated (any Actor)?
-    ) -> T {
-        self.resolve(type, named: named, params: params)
-    }
-
-    private func resolve<T>(_ type: T.Type, named: String?, params: Any?) -> T {
-        let key = ServiceKey(type, name: named)
-        guard let registration = self.registrations[key] else {
-            self.fail(
-                kind: .missingRegistration,
-                key: key,
-                message: "Bolt validation failed: Missing registration for \(Self.dependencyDescription(key))."
-            )
-        }
-
-        let resolved = self.resolveErased(key: key, registration: registration, params: params)
-        guard let typed = resolved as? T else {
-            self.fail(
-                kind: .typeMismatch,
-                key: key,
-                message: "Bolt validation failed: Type mismatch for \(Self.dependencyDescription(key)). Expected \(String(reflecting: type)), got \(String(reflecting: Swift.type(of: resolved)))."
-            )
-        }
-        return typed
-    }
-
-    @discardableResult
-    private func resolveErased(key: ServiceKey, registration: Registration, params: Any?) -> Any {
-        let callParams: Any?
-        switch registration.shape {
-        case .factoryNoParameters, .singletonNoParameters:
-            if params != nil {
-                self.fail(
-                    kind: .typeMismatch,
-                    key: key,
-                    message: "Bolt validation failed: Unexpected params for \(Self.dependencyDescription(key)). Registration is not parameterized."
-                )
-            }
-            callParams = nil
-        case .factoryWithParameters:
-            guard let params else {
-                self.fail(
-                    kind: .missingRegistration,
-                    key: key,
-                    message: "Bolt validation failed: Missing params for \(Self.dependencyDescription(key)). Expected \(String(reflecting: registration.factory.parameterType!))."
-                )
-            }
-            if registration.factory.acceptsParameter?(params) == false {
-                self.fail(
-                    kind: .typeMismatch,
-                    key: key,
-                    message: "Bolt validation failed: Parameter type mismatch for \(Self.dependencyDescription(key)). Expected \(String(reflecting: registration.factory.parameterType!)), got \(String(reflecting: Swift.type(of: params)))."
-                )
-            }
-            callParams = params
-        }
-
-        self.push(key)
-        defer { _ = self.stack.popLast() }
-
-        let resolved = registration.factory.call(self, callParams)
-        if !registration.factory.acceptsOutput(resolved) {
-            self.fail(
-                kind: .typeMismatch,
-                key: key,
-                message: "Bolt validation failed: Type mismatch for \(Self.dependencyDescription(key)). Expected \(String(reflecting: registration.factory.outputType)), got \(String(reflecting: Swift.type(of: resolved)))."
-            )
-        }
-        return resolved
-    }
-
-    private func rootParams(for registration: Registration) -> Any? {
-        switch registration.shape {
-        case .factoryNoParameters, .singletonNoParameters:
-            return nil
-        case .factoryWithParameters:
-            guard let params = self.params[registration.key] else {
-                self.fail(
-                    kind: .missingRegistration,
-                    key: registration.key,
-                    message: "Bolt validation failed: Missing params for \(Self.dependencyDescription(registration.key)). Expected \(String(reflecting: registration.factory.parameterType!)). Add params with BoltValidator.addParams(_:for:named:) before validating."
-                )
-            }
-            return params
-        }
-    }
-
-    private func push(_ key: ServiceKey) {
-        if self.stack.contains(key) {
-            let cycle = self.stack + [key]
-            self.fail(
-                kind: .circularDependency,
-                key: key,
-                message: "Bolt validation failed: Circular dependency detected: \(cycle.map(Self.dependencyDescription).joined(separator: " -> "))."
-            )
-        }
-        self.stack.append(key)
-    }
-
-    private func fail(kind: ValidationError.Kind, key: ServiceKey, message: String) -> Never {
-        self.errors.append(
-            ValidationError(
-                kind: kind,
-                dependency: ValidationError.DependencyDescriptor(typeName: key.typeName, name: key.name),
-                message: message
-            )
-        )
-        pthread_exit(nil)
-    }
-
-    private static func dependencyDescription(_ key: ServiceKey) -> String {
-        "\(key.typeName) (name: \(key.name.map { "\"\($0)\"" } ?? "nil"))"
-    }
-}
-
-private enum ValidationThread {
-    private final class State: @unchecked Sendable {
-        let operation: @Sendable () -> Void
-
-        init(operation: @escaping @Sendable () -> Void) {
-            self.operation = operation
-        }
-    }
-
-    static func run(_ operation: @escaping @Sendable () -> Void) {
-        let state = State(operation: operation)
-        let unmanaged = Unmanaged.passRetained(state)
-        var thread: pthread_t? = nil
-        let result = pthread_create(
-            &thread,
-            nil,
-            { pointer in
-                let state = Unmanaged<State>.fromOpaque(pointer).takeUnretainedValue()
-                state.operation()
-                return nil
-            },
-            unmanaged.toOpaque()
-        )
-
-        guard result == 0, let thread else {
-            unmanaged.release()
-            operation()
-            return
-        }
-
-        pthread_join(thread, nil)
-        unmanaged.release()
     }
 }

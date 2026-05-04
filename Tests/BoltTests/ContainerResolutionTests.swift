@@ -52,7 +52,7 @@ struct ContainerResolutionSuite {
         container.register {
             Singleton { _ in APIClient() }
             Factory { resolver in
-                UserService(api: resolver.get(APIClient.self))
+                UserService(api: try resolver.get(APIClient.self))
             }
         }
 
@@ -67,10 +67,10 @@ struct ContainerResolutionSuite {
         container.register {
             Factory { _ in APIClient() }
             Factory { resolver in
-                UserService(api: resolver.get(APIClient.self))
+                UserService(api: try resolver.get(APIClient.self))
             }
             Factory { resolver in
-                RootService(userService: resolver.get(UserService.self))
+                RootService(userService: try resolver.get(UserService.self))
             }
         }
 

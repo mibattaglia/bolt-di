@@ -62,7 +62,11 @@ public final class Container: Resolver, @unchecked Sendable {
         isolation: isolated (any Actor)? = #isolation
     ) -> T {
         let context = ResolutionContext(container: self, isolation: .capture(isolation))
-        return context.get(type, named: named, isolation: isolation)
+        do {
+            return try context.get(type, named: named, isolation: isolation)
+        } catch {
+            fatalError(Self.resolutionFailureMessage(error))
+        }
     }
 
     public func get<T, P>(
@@ -72,7 +76,11 @@ public final class Container: Resolver, @unchecked Sendable {
         isolation: isolated (any Actor)? = #isolation
     ) -> T {
         let context = ResolutionContext(container: self, isolation: .capture(isolation))
-        return context.get(type, named: named, params: params, isolation: isolation)
+        do {
+            return try context.get(type, named: named, params: params, isolation: isolation)
+        } catch {
+            fatalError(Self.resolutionFailureMessage(error))
+        }
     }
 
     public func resetScopes() {
@@ -90,36 +98,66 @@ public final class Container: Resolver, @unchecked Sendable {
 
     fileprivate func resolve<T>(
         _ type: T.Type, named: String?, params: Any?, context: ResolutionContext
-    ) -> T {
+    ) throws -> T {
         let key = ServiceKey(type, name: named)
         guard let registration = self.lookupRegistration(for: key) else {
-            fatalError(Self.missingRegistrationMessage(for: key))
+            throw ResolutionError.missingRegistration(key)
         }
 
-        self.assertIsolationCompatible(registration: registration, key: key, context: context)
+        let resolved = try self.resolveRegistration(
+            key: key,
+            registration: registration,
+            params: params,
+            context: context
+        )
+        return try Self.castOrThrow(resolved, expected: type, key: key)
+    }
+
+    func validate(registration: Registration, params: Any?) throws {
+        let context = ResolutionContext(container: self, isolation: registration.isolation)
+        _ = try self.resolveRegistration(
+            key: registration.key,
+            registration: registration,
+            params: params,
+            context: context
+        )
+    }
+
+    @discardableResult
+    private func resolveRegistration(
+        key: ServiceKey,
+        registration: Registration,
+        params: Any?,
+        context: ResolutionContext
+    ) throws -> Any {
+        try self.assertIsolationCompatible(registration: registration, key: key, context: context)
 
         switch registration.shape {
         case .factoryNoParameters:
             if params != nil {
-                fatalError(Self.unexpectedParameterMessage(for: key))
+                throw ResolutionError.unexpectedParameter(key)
             }
-            return self.resolveFactoryNoParameters(
-                type,
+            return try self.resolveFactory(
                 key: key,
                 registration: registration,
+                params: nil,
                 context: context
             )
         case .factoryWithParameters:
             guard let params else {
-                fatalError(
-                    Self.missingParameterMessage(
-                        for: key,
-                        expected: registration.factory.parameterType!
-                    )
+                throw ResolutionError.missingParameter(
+                    key,
+                    expected: registration.factory.parameterType!
                 )
             }
-            return self.resolveFactoryWithParameters(
-                type,
+            if registration.factory.acceptsParameter?(params) == false {
+                throw ResolutionError.parameterTypeMismatch(
+                    key,
+                    expected: registration.factory.parameterType!,
+                    actual: Swift.type(of: params)
+                )
+            }
+            return try self.resolveFactory(
                 key: key,
                 registration: registration,
                 params: params,
@@ -127,10 +165,9 @@ public final class Container: Resolver, @unchecked Sendable {
             )
         case .singletonNoParameters:
             if params != nil {
-                fatalError(Self.unexpectedParameterMessage(for: key))
+                throw ResolutionError.unexpectedParameter(key)
             }
-            return self.resolveSingletonNoParameters(
-                type,
+            return try self.resolveSingleton(
                 key: key,
                 registration: registration,
                 context: context
@@ -138,64 +175,53 @@ public final class Container: Resolver, @unchecked Sendable {
         }
     }
 
-    private func resolveFactoryNoParameters<T>(
-        _ type: T.Type,
+    private func resolveFactory(
         key: ServiceKey,
         registration: Registration,
+        params: Any?,
         context: ResolutionContext
-    ) -> T {
-        self.pushResolutionServiceKeyOrFail(key: key, context: context)
+    ) throws -> Any {
+        try self.pushResolutionServiceKey(key: key, context: context)
         defer { context.stack.removeLast() }
-        let resolved = registration.factory.call(context, nil)
-        return Self.castOrFail(resolved, expected: type, key: key)
+        let resolved = try registration.factory.call(context, params)
+        try Self.assertOutputCompatible(resolved, registration: registration, key: key)
+        return resolved
     }
 
-    private func resolveFactoryWithParameters<T>(
-        _ type: T.Type,
-        key: ServiceKey,
-        registration: Registration,
-        params: Any,
-        context: ResolutionContext
-    ) -> T {
-        self.pushResolutionServiceKeyOrFail(key: key, context: context)
-        defer { context.stack.removeLast() }
-        let resolved = registration.factory.call(context, params)
-        return Self.castOrFail(resolved, expected: type, key: key)
-    }
-
-    private func resolveSingletonNoParameters<T>(
-        _ type: T.Type,
+    private func resolveSingleton(
         key: ServiceKey,
         registration: Registration,
         context: ResolutionContext
-    ) -> T {
+    ) throws -> Any {
         guard let singletonCell = registration.singletonCell else {
-            fatalError(
-                "Bolt: Internal error: singleton registration missing cache cell for \(Self.dependencyDescription(key))."
+            throw ResolutionError.internalError(
+                "Bolt: Internal error: singleton registration missing cache cell for \(Self.dependencyDescription(key)).",
+                key: key
             )
         }
 
         if let cached = singletonCell.cachedValue {
-            return Self.castOrFail(cached, expected: type, key: key)
+            try Self.assertOutputCompatible(cached, registration: registration, key: key)
+            return cached
         }
 
-        self.pushResolutionServiceKeyOrFail(key: key, context: context)
+        try self.pushResolutionServiceKey(key: key, context: context)
         defer { context.stack.removeLast() }
 
-        let resolved = singletonCell.getOrCreate {
-            registration.factory.call(context, nil)
+        let resolved = try singletonCell.getOrCreate {
+            try registration.factory.call(context, nil)
         }
-        return Self.castOrFail(resolved, expected: type, key: key)
+        try Self.assertOutputCompatible(resolved, registration: registration, key: key)
+        return resolved
     }
 
     @inline(__always)
-    private func pushResolutionServiceKeyOrFail(
+    private func pushResolutionServiceKey(
         key: ServiceKey,
         context: ResolutionContext
-    ) {
+    ) throws {
         if context.stack.contains(key) {
-            let cycle = context.stack + [key]
-            fatalError(Self.circularDependencyMessage(for: cycle))
+            throw ResolutionError.circularDependency(context.stack + [key])
         }
 
         context.stack.append(key)
@@ -312,74 +338,40 @@ public final class Container: Resolver, @unchecked Sendable {
     }
 
     @inline(__always)
-    private static func castOrFail<T>(_ value: Any, expected: T.Type, key: ServiceKey) -> T {
+    private static func castOrThrow<T>(_ value: Any, expected: T.Type, key: ServiceKey) throws -> T {
         guard let typed = value as? T else {
-            fatalError(typeMismatchMessage(for: key, expected: expected, actual: Swift.type(of: value)))
+            throw ResolutionError.typeMismatch(key, expected: expected, actual: Swift.type(of: value))
         }
         return typed
+    }
+
+    private static func assertOutputCompatible(_ value: Any, registration: Registration, key: ServiceKey) throws {
+        guard registration.factory.acceptsOutput(value) else {
+            throw ResolutionError.typeMismatch(
+                key,
+                expected: registration.factory.outputType,
+                actual: Swift.type(of: value)
+            )
+        }
     }
 
     private func assertIsolationCompatible(
         registration: Registration,
         key: ServiceKey,
         context: ResolutionContext
-    ) {
+    ) throws {
         switch registration.isolation {
         case .none:
             return
         case .actor(let required):
             guard context.isolation == .actor(required) else {
-                fatalError(
-                    Self.isolationMismatchMessage(
-                        for: key,
-                        required: required,
-                        actual: context.isolation
-                    )
-                )
+                throw ResolutionError.isolationMismatch(key, required: required, actual: context.isolation)
             }
         }
     }
 
-    private static func isolationMismatchMessage(
-        for key: ServiceKey,
-        required: ActorIsolationIdentity,
-        actual: RegistrationIsolation
-    ) -> String {
-        let dependency = dependencyDescription(key)
-        let actualDescription = actual.description
-
-        if required.actorKey == ServiceKey(MainActor.self) {
-            return "Bolt: MainActor-isolated dependency \(dependency) was resolved from \(actualDescription) context. Resolve it from a @MainActor context, or explicitly hop before resolving with await MainActor.run { ... }."
-        }
-
-        return "Bolt: Actor-isolated dependency \(dependency) requires \(required.description) isolation, but current resolution isolation is \(actualDescription)."
-    }
-
     private static func duplicateRegistrationMessage(for key: ServiceKey) -> String {
         "Bolt: Duplicate registration for \(key.typeName) (name: \(nameDescription(key.name))). Use withOverrides { ... } to replace in scoped contexts."
-    }
-
-    private static func missingRegistrationMessage(for key: ServiceKey) -> String {
-        "Bolt: Missing registration for \(key.typeName) (name: \(nameDescription(key.name)))."
-    }
-
-    private static func circularDependencyMessage(for keys: [ServiceKey]) -> String {
-        let path = keys.map(dependencyDescription).joined(separator: " -> ")
-        return "Bolt: Circular dependency detected: \(path)."
-    }
-
-    private static func typeMismatchMessage(for key: ServiceKey, expected: Any.Type, actual: Any.Type)
-        -> String
-    {
-        "Bolt: Type mismatch for \(dependencyDescription(key)). Expected \(String(reflecting: expected)), got \(String(reflecting: actual))."
-    }
-
-    private static func missingParameterMessage(for key: ServiceKey, expected: Any.Type) -> String {
-        "Bolt: Missing params for \(dependencyDescription(key)). Expected \(String(reflecting: expected))."
-    }
-
-    private static func unexpectedParameterMessage(for key: ServiceKey) -> String {
-        "Bolt: Unexpected params for \(dependencyDescription(key)). Registration is not parameterized."
     }
 
     private static func dependencyDescription(_ key: ServiceKey) -> String {
@@ -389,6 +381,13 @@ public final class Container: Resolver, @unchecked Sendable {
     private static func nameDescription(_ name: String?) -> String {
         guard let name else { return "nil" }
         return "\"\(name)\""
+    }
+
+    private static func resolutionFailureMessage(_ error: Error) -> String {
+        if let error = error as? ResolutionError {
+            return error.message
+        }
+        return "Bolt: Dependency resolution failed with error: \(error)."
     }
 
     private func handleDuplicateRegistration(for key: ServiceKey) {
@@ -405,6 +404,99 @@ public final class Container: Resolver, @unchecked Sendable {
                 )
             )
         }
+    }
+}
+
+enum ResolutionError: Error {
+    case missingRegistration(ServiceKey)
+    case unexpectedParameter(ServiceKey)
+    case missingParameter(ServiceKey, expected: Any.Type)
+    case parameterTypeMismatch(ServiceKey, expected: Any.Type, actual: Any.Type)
+    case typeMismatch(ServiceKey, expected: Any.Type, actual: Any.Type)
+    case circularDependency([ServiceKey])
+    case isolationMismatch(ServiceKey, required: ActorIsolationIdentity, actual: RegistrationIsolation)
+    case internalError(String, key: ServiceKey?)
+
+    var message: String {
+        switch self {
+        case .missingRegistration(let key):
+            return "Bolt: Missing registration for \(Self.dependencyDescription(key))."
+        case .unexpectedParameter(let key):
+            return "Bolt: Unexpected params for \(Self.dependencyDescription(key)). Registration is not parameterized."
+        case .missingParameter(let key, let expected):
+            return "Bolt: Missing params for \(Self.dependencyDescription(key)). Expected \(String(reflecting: expected))."
+        case .parameterTypeMismatch(let key, let expected, let actual):
+            return "Bolt: Parameter type mismatch for \(Self.dependencyDescription(key)). Expected \(String(reflecting: expected)), got \(String(reflecting: actual))."
+        case .typeMismatch(let key, let expected, let actual):
+            return "Bolt: Type mismatch for \(Self.dependencyDescription(key)). Expected \(String(reflecting: expected)), got \(String(reflecting: actual))."
+        case .circularDependency(let keys):
+            let path = keys.map(Self.dependencyDescription).joined(separator: " -> ")
+            return "Bolt: Circular dependency detected: \(path)."
+        case .isolationMismatch(let key, let required, let actual):
+            let dependency = Self.dependencyDescription(key)
+            let actualDescription = actual.description
+
+            if required.actorKey == ServiceKey(MainActor.self) {
+                return "Bolt: MainActor-isolated dependency \(dependency) was resolved from \(actualDescription) context. Resolve it from a @MainActor context, or explicitly hop before resolving with await MainActor.run { ... }."
+            }
+
+            return "Bolt: Actor-isolated dependency \(dependency) requires \(required.description) isolation, but current resolution isolation is \(actualDescription)."
+        case .internalError(let message, _):
+            return message
+        }
+    }
+
+    var validationError: ValidationError {
+        let key: ServiceKey?
+        let kind: ValidationError.Kind
+
+        switch self {
+        case .missingRegistration(let serviceKey):
+            key = serviceKey
+            kind = .missingRegistration
+        case .unexpectedParameter(let serviceKey):
+            key = serviceKey
+            kind = .typeMismatch
+        case .missingParameter(let serviceKey, _):
+            key = serviceKey
+            kind = .missingRegistration
+        case .parameterTypeMismatch(let serviceKey, _, _):
+            key = serviceKey
+            kind = .typeMismatch
+        case .typeMismatch(let serviceKey, _, _):
+            key = serviceKey
+            kind = .typeMismatch
+        case .circularDependency(let serviceKeys):
+            key = serviceKeys.last
+            kind = .circularDependency
+        case .isolationMismatch(let serviceKey, _, _):
+            key = serviceKey
+            kind = .typeMismatch
+        case .internalError(_, let serviceKey):
+            key = serviceKey
+            kind = .typeMismatch
+        }
+
+        let detail = self.message.hasPrefix("Bolt: ")
+            ? String(self.message.dropFirst("Bolt: ".count))
+            : self.message
+
+        return ValidationError(
+            kind: kind,
+            dependency: key.map {
+                ValidationError.DependencyDescriptor(typeName: $0.typeName, name: $0.name)
+            },
+            message: "Bolt validation failed: \(detail)"
+        )
+    }
+
+    private static func dependencyDescription(_ key: ServiceKey) -> String {
+        "\(key.typeName) (name: \(nameDescription(key.name)))"
+    }
+
+    private static func nameDescription(_ name: String?) -> String {
+        guard let name else { return "nil" }
+        return "\"\(name)\""
     }
 }
 
@@ -435,8 +527,8 @@ private final class ResolutionContext: Resolver {
         _ type: T.Type,
         named: String?,
         isolation: isolated (any Actor)?
-    ) -> T {
-        self.container.resolve(type, named: named, params: nil, context: self)
+    ) throws -> T {
+        try self.container.resolve(type, named: named, params: nil, context: self)
     }
 
     func get<T, P>(
@@ -444,7 +536,7 @@ private final class ResolutionContext: Resolver {
         named: String?,
         params: P,
         isolation: isolated (any Actor)?
-    ) -> T {
-        self.container.resolve(type, named: named, params: params, context: self)
+    ) throws -> T {
+        try self.container.resolve(type, named: named, params: params, context: self)
     }
 }

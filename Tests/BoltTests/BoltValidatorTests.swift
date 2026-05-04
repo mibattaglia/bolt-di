@@ -115,7 +115,7 @@ private final class ValidatorParameterizedBranchModule: DependencyModule {
         registrations.append(
             FactoryWithParams(ValidatorParameterizedService.self) { (resolver: Resolver, params: ValidatorBranchParams) in
                 if params.connectWebSocket {
-                    _ = resolver.get((any ValidatorWebSocketClientProtocol).self)
+                    _ = try resolver.get((any ValidatorWebSocketClientProtocol).self)
                 }
                 return ValidatorParameterizedService()
             }.registration
@@ -299,10 +299,10 @@ struct BoltValidatorSuite {
         let container = Container()
         container.register {
             Factory(ValidatorCircularA.self) { resolver in
-                ValidatorCircularA(resolver.get(ValidatorCircularB.self))
+                ValidatorCircularA(try resolver.get(ValidatorCircularB.self))
             }
             Factory(ValidatorCircularB.self) { resolver in
-                ValidatorCircularB(resolver.get(ValidatorCircularA.self))
+                ValidatorCircularB(try resolver.get(ValidatorCircularA.self))
             }
         }
 

@@ -46,7 +46,7 @@ private final class ErgonomicRootModule: DependencyModule {
         }
 
         Factory(ErgonomicScopedValue.self) { resolver in
-            ErgonomicScopedValue(value: resolver.get(String.self))
+            ErgonomicScopedValue(value: try resolver.get(String.self))
         }
     }
 }

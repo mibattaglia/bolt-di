@@ -3,14 +3,14 @@ public protocol Resolver {
         _ type: T.Type,
         named: String?,
         isolation: isolated (any Actor)?
-    ) -> T
+    ) throws -> T
 
     func get<T, P>(
         _ type: T.Type,
         named: String?,
         params: P,
         isolation: isolated (any Actor)?
-    ) -> T
+    ) throws -> T
 }
 
 extension Resolver {
@@ -18,8 +18,8 @@ extension Resolver {
         _ type: T.Type = T.self,
         named: String? = nil,
         isolation: isolated (any Actor)? = #isolation
-    ) -> T {
-        self.get(type, named: named, isolation: isolation)
+    ) throws -> T {
+        try self.get(type, named: named, isolation: isolation)
     }
 
     public func get<T, P>(
@@ -27,7 +27,7 @@ extension Resolver {
         named: String? = nil,
         params: P,
         isolation: isolated (any Actor)? = #isolation
-    ) -> T {
-        self.get(type, named: named, params: params, isolation: isolation)
+    ) throws -> T {
+        try self.get(type, named: named, params: params, isolation: isolation)
     }
 }

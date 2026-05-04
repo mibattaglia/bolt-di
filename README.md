@@ -60,7 +60,7 @@ final class NetworkModule: DependencyModule {
     Singleton { _ in APIClient() }
 
     Factory { resolver in
-      let api: APIClient = resolver.get()
+      let api: APIClient = try resolver.get()
       return UserService(api: api)
     }
   }
@@ -78,7 +78,7 @@ let service: UserService = Bolt.inject()
 - Use `DependentModules { ... }` inside `DependencyModule.body` to declare transitive module requirements.
 - Use `withOverrides` for lexical test/customization scopes only.
 - Module planning uses WhoopDI-style `serviceKey` identity: the default is `ServiceKey(type(of: self))`, repeated modules with the same `serviceKey` are coalesced, and the first discovered module wins.
-- Keep runtime lookup ergonomic by relying on inferred `resolver.get()` where context provides type information.
+- Keep runtime lookup ergonomic by relying on inferred `try resolver.get()` where context provides type information.
 
 ### Module identity
 
@@ -206,6 +206,8 @@ Notes:
 - Treat `Bolt.setup` as app bootstrap API, not per-test setup API.
 - In debug builds, concurrent `Bolt.setup(modules:)` calls fail fast with guidance to use `withModules`.
 
+Factory closures may throw. Calls through the factory `Resolver` are throwing (`try resolver.get(...)`) so validation can report nested object-graph failures as diagnostics. Runtime entry points such as `Container.get` and `Bolt.inject` remain crash-on-failure APIs.
+
 ### Named and parameterized registrations
 
 ```swift
@@ -309,7 +311,7 @@ Use this product in test targets only.
 
 ## Validation
 
-Use `BoltValidator` for non-crashing diagnostics. Validation keeps the existing static checks (module cycles, duplicate registrations, and registration type mismatches), then attempts to construct every effective registration root in a validation container. This executes factory closures, so nested `resolver.get(...)` calls inside factories are checked too.
+Use `BoltValidator` for non-crashing diagnostics. Validation keeps the existing static checks (module cycles, duplicate registrations, and registration type mismatches), then attempts to construct every effective registration root in a validation container. This executes factory closures, so nested `try resolver.get(...)` calls inside factories are checked too.
 
 ```swift
 let validator = BoltValidator(modules: [NetworkModule()])

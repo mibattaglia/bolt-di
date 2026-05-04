@@ -29,8 +29,9 @@ public struct ValidationError: Error, Sendable {
     }
 }
 
-public struct BoltValidator {
+public final class BoltValidator {
     private let container: Container
+    private var params: [ServiceKey: Any] = [:]
 
     public static func validate(module: DependencyModule, _ onError: (ValidationError) -> Void) {
         BoltValidator(modules: [module]).validate(onError)
@@ -70,17 +71,64 @@ public struct BoltValidator {
         self.container = container
     }
 
+    public func addParams<T>(_ params: Any, for type: T.Type, named: String? = nil) {
+        self.params[ServiceKey(type, name: named)] = params
+    }
+
     public func validate(_ onError: (ValidationError) -> Void) {
         let registrations = self.container.effectiveRegistrationsForValidation()
+        let orderedRegistrations = registrations.values.sorted { lhs, rhs in
+            if lhs.key.typeName != rhs.key.typeName {
+                return lhs.key.typeName < rhs.key.typeName
+            }
+            return (lhs.key.name ?? "") < (rhs.key.name ?? "")
+        }
 
         for error in self.container.collectedValidationErrors() {
             onError(error)
         }
 
-        for registration in registrations.values {
+        for registration in orderedRegistrations {
             if let error = self.typeMismatchError(for: registration) {
                 onError(error)
             }
+        }
+
+        for registration in orderedRegistrations {
+            do {
+                try self.container.validate(
+                    registration: registration,
+                    params: try self.validationParams(for: registration)
+                )
+            } catch let error as ResolutionError {
+                onError(error.validationError)
+            } catch {
+                onError(
+                    ValidationError(
+                        kind: .typeMismatch,
+                        dependency: ValidationError.DependencyDescriptor(
+                            typeName: registration.key.typeName,
+                            name: registration.key.name
+                        ),
+                        message: "Bolt validation failed: Dependency factory for \(registration.key.typeName) threw error: \(error)."
+                    )
+                )
+            }
+        }
+    }
+
+    private func validationParams(for registration: Registration) throws -> Any? {
+        switch registration.shape {
+        case .factoryNoParameters, .singletonNoParameters:
+            return nil
+        case .factoryWithParameters:
+            guard let params = self.params[registration.key] else {
+                throw ResolutionError.missingParameter(
+                    registration.key,
+                    expected: registration.factory.parameterType!
+                )
+            }
+            return params
         }
     }
 
@@ -100,5 +148,4 @@ public struct BoltValidator {
                 "Bolt validation failed: Type mismatch for \(registration.key.typeName) (name: \(registration.key.name.map { "\"\($0)\"" } ?? "nil"))."
         )
     }
-
 }

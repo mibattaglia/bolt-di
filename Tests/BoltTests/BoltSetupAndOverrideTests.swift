@@ -26,7 +26,7 @@ private final class OrderedModuleB: DependencyModule {
         }
 
         Factory(OrderedValue.self) { resolver in
-            OrderedValue(value: resolver.get(String.self))
+            OrderedValue(value: try resolver.get(String.self))
         }
     }
 }

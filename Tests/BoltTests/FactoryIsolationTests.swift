@@ -60,7 +60,7 @@ struct FactoryIsolationSuite {
             override var body: ModuleDefinition {
                 Factory(on: MainActor.self) { _ in MainActorService() }
                 Factory(on: MainActor.self) { resolver in
-                    MainActorViewModel(service: resolver.get())
+                    MainActorViewModel(service: try resolver.get())
                 }
             }
         }
@@ -95,7 +95,7 @@ struct FactoryIsolationSuite {
             @ModuleBuilder
             override var body: ModuleDefinition {
                 FactoryWithParams<String, MainActorViewModel>(on: MainActor.self) { resolver, _ in
-                    MainActorViewModel(service: resolver.get())
+                    MainActorViewModel(service: try resolver.get())
                 }
                 Factory(on: MainActor.self) { _ in MainActorService() }
             }

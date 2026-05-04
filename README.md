@@ -220,6 +220,45 @@ let live: APIClient = Bolt.inject(named: "live")
 let greeting: String = Bolt.inject(named: "greeting", params: "Michael")
 ```
 
+### MainActor-bound factories
+
+Factory registrations can require actor isolation. Bolt keeps resolution synchronous: it does not hop to `MainActor` internally.
+
+Use `Factory(on: MainActor.self)` when registering main-actor-bound services from a `DependencyModule.body`:
+
+```swift
+@MainActor
+final class ImageLoader {
+  init() {}
+}
+
+final class UIModule: DependencyModule {
+  @ModuleBuilder
+  override var body: ModuleDefinition {
+    Factory(on: MainActor.self) { _ in ImageLoader() }
+  }
+}
+```
+
+Resolve from a `@MainActor` context with the normal APIs:
+
+```swift
+@MainActor
+func makeFeature() {
+  let loader: ImageLoader = Bolt.inject()
+}
+```
+
+If the caller is not already on the main actor, hop before resolving:
+
+```swift
+await MainActor.run {
+  let loader: ImageLoader = Bolt.inject()
+}
+```
+
+Bolt does not support isolated singleton registrations yet. Prefer factory scope for actor-bound services.
+
 ### Scoped overrides
 
 ```swift

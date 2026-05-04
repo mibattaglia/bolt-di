@@ -126,6 +126,7 @@ struct BoltValidatorSuite {
             Registration(
                 key: ServiceKey(String.self),
                 scope: .factory,
+                isolation: .none,
                 factory: ErasedFactory(
                     outputType: Int.self,
                     parameterType: nil,

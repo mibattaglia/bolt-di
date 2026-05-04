@@ -1,7 +1,7 @@
 import Foundation
 
 public final class Container: Resolver, @unchecked Sendable {
-    @TaskLocal nonisolated(unsafe) static var taskLocalCurrent: Container?
+    @TaskLocal static var taskLocalCurrent: Container?
 
     public static var current: Container {
         Self.taskLocalCurrent ?? Bolt.shared
@@ -56,14 +56,23 @@ public final class Container: Resolver, @unchecked Sendable {
         }
     }
 
-    public func get<T>(_ type: T.Type = T.self, named: String? = nil) -> T {
-        let context = ResolutionContext(container: self)
-        return context.get(type, named: named)
+    public func get<T>(
+        _ type: T.Type = T.self,
+        named: String? = nil,
+        isolation: isolated (any Actor)? = #isolation
+    ) -> T {
+        let context = ResolutionContext(container: self, isolation: .capture(isolation))
+        return context.get(type, named: named, isolation: isolation)
     }
 
-    public func get<T, P>(_ type: T.Type = T.self, named: String? = nil, params: P) -> T {
-        let context = ResolutionContext(container: self)
-        return context.get(type, named: named, params: params)
+    public func get<T, P>(
+        _ type: T.Type = T.self,
+        named: String? = nil,
+        params: P,
+        isolation: isolated (any Actor)? = #isolation
+    ) -> T {
+        let context = ResolutionContext(container: self, isolation: .capture(isolation))
+        return context.get(type, named: named, params: params, isolation: isolation)
     }
 
     public func resetScopes() {
@@ -86,6 +95,8 @@ public final class Container: Resolver, @unchecked Sendable {
         guard let registration = self.lookupRegistration(for: key) else {
             fatalError(Self.missingRegistrationMessage(for: key))
         }
+
+        self.assertIsolationCompatible(registration: registration, key: key, context: context)
 
         switch registration.shape {
         case .factoryNoParameters:
@@ -308,6 +319,42 @@ public final class Container: Resolver, @unchecked Sendable {
         return typed
     }
 
+    private func assertIsolationCompatible(
+        registration: Registration,
+        key: ServiceKey,
+        context: ResolutionContext
+    ) {
+        switch registration.isolation {
+        case .none:
+            return
+        case .actor(let required):
+            guard context.isolation == .actor(required) else {
+                fatalError(
+                    Self.isolationMismatchMessage(
+                        for: key,
+                        required: required,
+                        actual: context.isolation
+                    )
+                )
+            }
+        }
+    }
+
+    private static func isolationMismatchMessage(
+        for key: ServiceKey,
+        required: ActorIsolationIdentity,
+        actual: RegistrationIsolation
+    ) -> String {
+        let dependency = dependencyDescription(key)
+        let actualDescription = actual.description
+
+        if required.actorKey == ServiceKey(MainActor.self) {
+            return "Bolt: MainActor-isolated dependency \(dependency) was resolved from \(actualDescription) context. Resolve it from a @MainActor context, or explicitly hop before resolving with await MainActor.run { ... }."
+        }
+
+        return "Bolt: Actor-isolated dependency \(dependency) requires \(required.description) isolation, but current resolution isolation is \(actualDescription)."
+    }
+
     private static func duplicateRegistrationMessage(for key: ServiceKey) -> String {
         "Bolt: Duplicate registration for \(key.typeName) (name: \(nameDescription(key.name))). Use withOverrides { ... } to replace in scoped contexts."
     }
@@ -375,18 +422,29 @@ private final class RegistrationSnapshot: @unchecked Sendable {
 }
 
 private final class ResolutionContext: Resolver {
-    private unowned let container: Container
+    private let container: Container
     fileprivate var stack: [ServiceKey] = []
+    fileprivate let isolation: RegistrationIsolation
 
-    init(container: Container) {
+    init(container: Container, isolation: RegistrationIsolation) {
         self.container = container
+        self.isolation = isolation
     }
 
-    func get<T>(_ type: T.Type, named: String?) -> T {
+    func get<T>(
+        _ type: T.Type,
+        named: String?,
+        isolation: isolated (any Actor)?
+    ) -> T {
         self.container.resolve(type, named: named, params: nil, context: self)
     }
 
-    func get<T, P>(_ type: T.Type, named: String?, params: P) -> T {
+    func get<T, P>(
+        _ type: T.Type,
+        named: String?,
+        params: P,
+        isolation: isolated (any Actor)?
+    ) -> T {
         self.container.resolve(type, named: named, params: params, context: self)
     }
 }

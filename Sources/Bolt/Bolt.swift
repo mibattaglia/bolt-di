@@ -27,12 +27,21 @@ public enum Bolt {
         }
     }
 
-    public static func inject<T>(_ type: T.Type = T.self, named: String? = nil) -> T {
-        Container.current.get(type, named: named)
+    public static func inject<T>(
+        _ type: T.Type = T.self,
+        named: String? = nil,
+        isolation: isolated (any Actor)? = #isolation
+    ) -> T {
+        Container.current.get(type, named: named, isolation: isolation)
     }
 
-    public static func inject<T, P>(_ type: T.Type = T.self, named: String? = nil, params: P) -> T {
-        Container.current.get(type, named: named, params: params)
+    public static func inject<T, P>(
+        _ type: T.Type = T.self,
+        named: String? = nil,
+        params: P,
+        isolation: isolated (any Actor)? = #isolation
+    ) -> T {
+        Container.current.get(type, named: named, params: params, isolation: isolation)
     }
 
     public static func withContainer<R>(_ container: Container, _ body: () throws -> R) rethrows -> R {

@@ -96,6 +96,22 @@ struct ErasedFactory {
     let outputType: Any.Type
     let parameterType: Any.Type?
     let call: (Resolver, Any?) -> Any
+    let acceptsParameter: ((Any) -> Bool)?
+    let acceptsOutput: (Any) -> Bool
+
+    init(
+        outputType: Any.Type,
+        parameterType: Any.Type?,
+        call: @escaping (Resolver, Any?) -> Any,
+        acceptsParameter: ((Any) -> Bool)? = nil,
+        acceptsOutput: @escaping (Any) -> Bool = { _ in true }
+    ) {
+        self.outputType = outputType
+        self.parameterType = parameterType
+        self.call = call
+        self.acceptsParameter = acceptsParameter
+        self.acceptsOutput = acceptsOutput
+    }
 }
 
 public struct Factory<T> {
@@ -141,7 +157,8 @@ public struct Factory<T> {
             factory: ErasedFactory(
                 outputType: T.self,
                 parameterType: nil,
-                call: { resolver, _ in self.factory(resolver) }
+                call: { resolver, _ in self.factory(resolver) },
+                acceptsOutput: { $0 is T }
             )
         )
     }
@@ -170,7 +187,8 @@ public struct Singleton<T> {
             factory: ErasedFactory(
                 outputType: T.self,
                 parameterType: nil,
-                call: { resolver, _ in self.factory(resolver) }
+                call: { resolver, _ in self.factory(resolver) },
+                acceptsOutput: { $0 is T }
             )
         )
     }
@@ -227,7 +245,9 @@ public struct FactoryWithParams<P, T> {
                         )
                     }
                     return self.factory(resolver, typedParams)
-                }
+                },
+                acceptsParameter: { $0 is P },
+                acceptsOutput: { $0 is T }
             )
         )
     }

@@ -77,6 +77,53 @@ private final class PlannerLeafModule: DependencyModule {
     }
 }
 
+private protocol ValidatorWebSocketClientProtocol {}
+
+private struct ValidatorWebSocketClient: ValidatorWebSocketClientProtocol {}
+
+private struct ValidatorBranchParams {
+    let connectWebSocket: Bool
+}
+
+private struct ValidatorParameterizedService {}
+
+private final class ValidatorCircularA {
+    init(_ b: ValidatorCircularB) {}
+}
+
+private final class ValidatorCircularB {
+    init(_ a: ValidatorCircularA) {}
+}
+
+private final class ValidatorParameterizedBranchModule: DependencyModule {
+    private let includeWebSocketRegistration: Bool
+
+    init(includeWebSocketRegistration: Bool) {
+        self.includeWebSocketRegistration = includeWebSocketRegistration
+        super.init()
+    }
+
+    override var body: ModuleDefinition {
+        var registrations: [Registration] = []
+        if self.includeWebSocketRegistration {
+            registrations.append(
+                Factory((any ValidatorWebSocketClientProtocol).self) { _ in
+                    ValidatorWebSocketClient()
+                }.registration
+            )
+        }
+        registrations.append(
+            FactoryWithParams(ValidatorParameterizedService.self) { (resolver: Resolver, params: ValidatorBranchParams) in
+                if params.connectWebSocket {
+                    _ = resolver.get((any ValidatorWebSocketClientProtocol).self)
+                }
+                return ValidatorParameterizedService()
+            }.registration
+        )
+        return ModuleDefinition(registrations: registrations)
+    }
+}
+
 private final class PlannerRootModule: DependencyModule {
     let leaf: PlannerLeafModule
     private let counter: PlannerEvaluationCounter
@@ -162,6 +209,78 @@ struct BoltValidatorSuite {
         #expect(errors.isEmpty)
     }
 
+    @Test func executesParameterizedFactoryBranchesAndReportsMissingNestedDependencies() {
+        let validator = BoltValidator(
+            modules: [ValidatorParameterizedBranchModule(includeWebSocketRegistration: false)]
+        )
+        validator.addParams(
+            ValidatorBranchParams(connectWebSocket: true),
+            for: ValidatorParameterizedService.self
+        )
+
+        var errors: [ValidationError] = []
+        validator.validate { error in
+            errors.append(error)
+        }
+
+        #expect(errors.contains { error in
+            error.kind == .missingRegistration
+                && error.dependency?.typeName == String(reflecting: (any ValidatorWebSocketClientProtocol).self)
+        })
+    }
+
+    @Test func parameterizedFactoryBranchValidationPassesWhenNestedDependencyIsRegistered() {
+        let validator = BoltValidator(
+            modules: [ValidatorParameterizedBranchModule(includeWebSocketRegistration: true)]
+        )
+        validator.addParams(
+            ValidatorBranchParams(connectWebSocket: true),
+            for: ValidatorParameterizedService.self
+        )
+
+        var errors: [ValidationError] = []
+        validator.validate { error in
+            errors.append(error)
+        }
+
+        #expect(errors.isEmpty)
+    }
+
+    @Test func reportsMissingParamsForParameterizedValidationRoots() {
+        let validator = BoltValidator(
+            modules: [ValidatorParameterizedBranchModule(includeWebSocketRegistration: true)]
+        )
+
+        var errors: [ValidationError] = []
+        validator.validate { error in
+            errors.append(error)
+        }
+
+        #expect(errors.contains { error in
+            error.kind == .missingRegistration
+                && error.dependency?.typeName == String(reflecting: ValidatorParameterizedService.self)
+                && error.message.contains("Missing params")
+        })
+    }
+
+    @Test func reportsBadParamsForParameterizedValidationRoots() {
+        let validator = BoltValidator(
+            modules: [ValidatorParameterizedBranchModule(includeWebSocketRegistration: true)]
+        )
+        validator.addParams("not branch params", for: ValidatorParameterizedService.self)
+
+        var errors: [ValidationError] = []
+        validator.validate { error in
+            errors.append(error)
+        }
+
+        #expect(errors.contains { error in
+            error.kind == .typeMismatch
+                && error.dependency?.typeName == String(reflecting: ValidatorParameterizedService.self)
+                && error.message.contains("Parameter type mismatch")
+        })
+    }
+
     @Test func detectsCircularModuleDependencies() {
         let validator = BoltValidator(modules: [ModuleCycleRoot()])
 
@@ -174,6 +293,26 @@ struct BoltValidatorSuite {
         #expect(errors.first?.kind == .circularDependency)
         #expect(errors.first?.message.contains("ModuleCycleRoot") == true)
         #expect(errors.first?.message.contains("ModuleCycleLeaf") == true)
+    }
+
+    @Test func convertsCircularObjectGraphResolutionToValidationErrors() {
+        let container = Container()
+        container.register {
+            Factory(ValidatorCircularA.self) { resolver in
+                ValidatorCircularA(resolver.get(ValidatorCircularB.self))
+            }
+            Factory(ValidatorCircularB.self) { resolver in
+                ValidatorCircularB(resolver.get(ValidatorCircularA.self))
+            }
+        }
+
+        let validator = BoltValidator(container: container)
+        var errors: [ValidationError] = []
+        validator.validate { error in
+            errors.append(error)
+        }
+
+        #expect(errors.contains { $0.kind == .circularDependency })
     }
 
     @Test func moduleValidationConvenienceUsesModuleGraph() {

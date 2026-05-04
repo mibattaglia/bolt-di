@@ -11,7 +11,7 @@ Bolt is a fast, lightweight Swift dependency injection framework with:
 - Task-local module graph scoping (`withModules`) for isolated tests
 - Test-graph sugar (`withModules(..., overrides:)`, `DependencyModule.withTestGraph(...)`)
 - Swift Testing trait support via the `BoltTestSupport` product on Swift 6.2+
-- Validator tooling for duplicate/type-mismatch checks, module dependency cycle checks, and strict required-registration checks
+- Validator tooling for duplicate/type-mismatch checks, module dependency cycle checks, and object-graph construction checks
 
 ## Installation
 
@@ -309,7 +309,7 @@ Use this product in test targets only.
 
 ## Validation
 
-Use `BoltValidator` for non-crashing diagnostics:
+Use `BoltValidator` for non-crashing diagnostics. Validation keeps the existing static checks (module cycles, duplicate registrations, and registration type mismatches), then attempts to construct every effective registration root in a validation container. This executes factory closures, so nested `resolver.get(...)` calls inside factories are checked too.
 
 ```swift
 let validator = BoltValidator(modules: [NetworkModule()])
@@ -317,6 +317,20 @@ validator.validate { error in
   print(error.message)
 }
 ```
+
+Parameterized registrations require validation params for the exact service key:
+
+```swift
+let validator = BoltValidator(modules: [ProfileModule()])
+validator.addParams(ProfileID("me"), for: ProfileViewModel.self)
+validator.addParams("live", for: APIClient.self, named: "environment")
+
+validator.validate { error in
+  print(error.message)
+}
+```
+
+If params are missing or have the wrong type, validation reports an error instead of skipping that root. A validation run with no errors means all registered object graph roots can be constructed with the supplied params.
 
 Validate a single feature module (including its declared `DependentModules`) directly:
 

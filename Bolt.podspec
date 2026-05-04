@@ -1,6 +1,6 @@
 Pod::Spec.new do |spec|
   spec.name = 'Bolt'
-  spec.version = '0.1.2'
+  spec.version = '0.2.0'
   spec.summary = 'A fast, lightweight dependency injection framework for Swift.'
   spec.homepage = 'https://github.com/mibattaglia/bolt-di'
   spec.license = { :type => 'Proprietary' }

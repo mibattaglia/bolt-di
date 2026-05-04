@@ -44,15 +44,12 @@ enum RegistrationIsolation: Equatable, Sendable {
     }
 }
 
-// MARK: - MainActor factory helper
-
-private func callMainActorFactory<T>(_ factory: @MainActor () -> T) -> T {
-    nonisolated(unsafe) var result: T?
+private func callMainActorFactory<T>(_ factory: @MainActor () -> T) -> T where T: Sendable {
     MainActor.assumeIsolated {
-        result = factory()
+        factory()
     }
-    return result!
 }
+
 
 // MARK: - Registration
 
@@ -124,7 +121,7 @@ public struct Factory<T> {
         named: String? = nil,
         on actor: MainActor.Type,
         _ factory: @escaping @MainActor (Resolver) -> T
-    ) {
+    ) where T: Sendable {
         self.type = type
         self.name = named
         self.isolation = .mainActor
@@ -202,7 +199,7 @@ public struct FactoryWithParams<P, T> {
         named: String? = nil,
         on actor: MainActor.Type,
         _ factory: @escaping @MainActor (Resolver, P) -> T
-    ) {
+    ) where T: Sendable {
         self.type = type
         self.name = named
         self.isolation = .mainActor

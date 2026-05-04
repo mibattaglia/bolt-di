@@ -1,7 +1,7 @@
 import Foundation
 
 public final class Container: Resolver, @unchecked Sendable {
-    @TaskLocal nonisolated(unsafe) static var taskLocalCurrent: Container?
+    @TaskLocal static var taskLocalCurrent: Container?
 
     public static var current: Container {
         Self.taskLocalCurrent ?? Bolt.shared
@@ -422,7 +422,7 @@ private final class RegistrationSnapshot: @unchecked Sendable {
 }
 
 private final class ResolutionContext: Resolver {
-    private unowned let container: Container
+    private let container: Container
     fileprivate var stack: [ServiceKey] = []
     fileprivate let isolation: RegistrationIsolation
 

@@ -77,8 +77,7 @@ let service: UserService = Bolt.inject()
 - Prefer passing resolved dependencies into child types via initializers rather than resolving deep in leaf objects.
 - Use `DependentModules { ... }` inside `DependencyModule.body` to declare transitive module requirements.
 - Use `withOverrides` for lexical test/customization scopes only.
-- Module planning uses WhoopDI-style `serviceKey` identity: the default is `ServiceKey(type(of: self))`, repeated modules with the same `serviceKey` are coalesced, and the first discovered module wins.
-- Keep runtime lookup ergonomic by relying on inferred `try resolver.get()` where context provides type information.
+- Module planning uses `serviceKey` identity: the default is `ServiceKey(type(of: self))`, repeated modules with the same `serviceKey` are coalesced, and the first discovered module wins.
 
 ### Module identity
 

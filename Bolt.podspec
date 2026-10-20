@@ -3,7 +3,7 @@ Pod::Spec.new do |spec|
   spec.version = '0.2.1'
   spec.summary = 'A fast, lightweight dependency injection framework for Swift.'
   spec.homepage = 'https://github.com/mibattaglia/bolt-di'
-  spec.license = { :type => 'Proprietary' }
+  spec.license = { :type => 'MIT', :file => 'LICENSE' }
   spec.authors = { 'Michael Battaglia' => 'michaelbattaglia@users.noreply.github.com' }
   spec.source = { :git => 'https://github.com/mibattaglia/bolt-di.git', :tag => spec.version.to_s }
 
